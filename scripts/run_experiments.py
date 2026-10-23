@@ -30,9 +30,16 @@ def main():
     p.add_argument("--seconds", type=float, default=30)
     p.add_argument("--samples", type=int, default=1000)
     p.add_argument("--jobs", type=int, default=12)
+    p.add_argument("--new-highdiv-batch", action="store_true",
+                   help="explicitly start a separately requested HighDiv batch in a new directory; "
+                        "preserve the frozen baseline")
     a = p.parse_args()
-    if a.variant == "highdiv" and (ROOT / "results/BASELINE_FROZEN.json").exists():
-        p.error("HighDiv baseline is frozen. Reuse its saved samples; do not run it again.")
+    frozen_baseline = ROOT / "results/BASELINE_FROZEN.json"
+    if a.new_highdiv_batch and a.variant != "highdiv":
+        p.error("--new-highdiv-batch requires --variant highdiv")
+    if a.variant == "highdiv" and frozen_baseline.exists() and not a.new_highdiv_batch:
+        p.error("HighDiv baseline is frozen. Reuse its saved samples. For a separately requested "
+                "new experiment, use --new-highdiv-batch with a new --output directory.")
     if not 1 <= a.jobs <= 12 or a.seconds <= 0 or a.samples <= 0:
         p.error("jobs must be 1..12; seconds/samples must be positive")
     a.output = a.output.resolve()
@@ -59,6 +66,9 @@ def main():
                     samples=a.samples, variant=a.variant, instances=jobs,
                     deadline="wall time from before Popen; SIGKILL at deadline; preserve complete lines",
                     threads_per_solver=1)
+    if a.new_highdiv_batch:
+        manifest["new_highdiv_batch"] = True
+        manifest["frozen_baseline_sha256"] = digest(frozen_baseline) if frozen_baseline.exists() else None
     (a.output / "manifest.json").write_text(json.dumps(manifest, indent=2)+"\n")
     active, lock, stopped = set(), threading.Lock(), threading.Event()
     def cancel(signum, _frame):
