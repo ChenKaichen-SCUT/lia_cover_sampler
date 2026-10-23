@@ -360,6 +360,100 @@ CandidateBatch Search::safe(const Assignment &seed, const Coverage &coverage, Bu
     result.status = result.model ? "candidate" : budget.done() ? "budget_exhausted" : "no_candidate";
     return result;
 }
+CandidateBatch Search::line(const Assignment &seed, const Coverage &coverage, Budget &budget,
+    std::mt19937_64 &rng, Stats &stats, const std::vector<Assignment> &history,
+    const std::function<bool(const std::string &)> &already_emitted) {
+    CandidateBatch result;
+    Timer timer(stats,"line_analysis");
+    if (!syntax) syntax=std::make_unique<AffineSyntax>(f,options.line_limits);
+    if (!structural || !structural->complete) structural=structural_equalities(f,*syntax,budget);
+    stats.counts["structural_collection_complete"]=structural->complete;
+    DirectionSystem system;
+    system.scope="structural_line"; system.width=seed.size(); system.equations=structural->rows;
+    for (size_t i=0;i<seed.size();++i) if (f.nodes[f.variables[i]].boolean) system.booleans.insert(i);
+    auto dirs=quota_directions(system,history,seed,budget,rng,stats,options.direction_cap);
+    std::vector<std::unique_ptr<LineAnalyzer>> analyzers;
+    std::vector<std::vector<Target>> goals;
+    std::vector<LineDomain> domains;
+    for (const auto &direction:dirs) {
+        if (budget.done()) break;
+        auto analyzer=std::make_unique<LineAnalyzer>(f,seed,direction.delta,*syntax,budget);
+        auto feasible=analyzer->feasible();
+        ++stats.counts["line_domain_"+line_status_name(feasible.status)];
+        if (feasible.status!=LineStatus::Exact) {
+            if (feasible.status==LineStatus::Unsupported) line_supported=false;
+            result.status=line_status_name(feasible.status); return result;
+        }
+        stats.counts["line_nonzero_components"]+=feasible.domain.without(0).intervals.size();
+        domains.push_back(feasible.domain);
+        goals.push_back(options.matching ? targets.select(coverage,rng,32,budget,&direction.delta) :
+                                          active_targets(f,coverage,rng,32));
+        analyzers.push_back(std::move(analyzer));
+    }
+    auto seed_observation=f.evaluate(seed);
+    Region safe_region(f,seed,seed_observation,budget);
+    std::set<std::string> scored{f.key(seed)};
+    result.direction_attempts.resize(goals.size());
+    auto attempt=[&](size_t i,size_t j) {
+        if (budget.done() || result.attempts>=options.attempt_cap || result.scored>=options.candidate_cap ||
+            j>=goals[i].size()) return;
+        ++result.attempts; ++result.direction_attempts[i]; ++stats.counts["candidate_attempts"];
+        ++stats.counts["direction_"+dirs[i].source+"_attempts"];
+        auto target=goals[i][j];
+        auto domain=f.nodes[target.node].boolean ? analyzers[i]->boolean_target(target) :
+                                                   analyzers[i]->observable(target.node);
+        if (domain.status!=LineStatus::Exact) {
+            ++stats.counts["line_target_"+line_status_name(domain.status)]; return;
+        }
+        std::optional<Z> z;
+        try {
+            if (f.nodes[target.node].boolean) z=line_bit_witness(domain.domain,0,0,0,false,rng);
+            else {
+                auto [alpha,beta]=analyzers[i]->numeric(target.node);
+                if (alpha==0 && bit(beta,target.bit)==target.desired)
+                    ++stats.counts["line_constant_reach_opportunities"];
+                z=line_bit_witness(domain.domain,alpha,beta,target.bit,target.desired,rng,options.random);
+            }
+        } catch (const LineFailure &error) {
+            ++stats.counts["line_target_"+line_status_name(error.status)]; return;
+        }
+        if (!z) { ++stats.counts["line_target_no_witness"]; return; }
+        Assignment candidate=seed;
+        for (size_t k=0;k<seed.size();++k) candidate[k]+=*z*dirs[i].delta[k];
+        auto key=f.key(candidate);
+        if (!scored.insert(key).second || already_emitted(key) || !action_scored.insert(key).second) {
+            ++result.duplicates; ++stats.counts["duplicate_candidates"]; return;
+        }
+        last_candidate=candidate;
+        auto observed=f.evaluate(candidate);
+        if (!f.validate(candidate) || (!options.random &&
+            (!observed.visited[target.node] || bit(observed.values[target.node],target.bit)!=target.desired))) {
+            std::ostringstream direction; direction << '[';
+            for (size_t k=0;k<seed.size();++k) { if(k) direction<<','; direction<<quote(dirs[i].delta[k].get_str()); }
+            last_failure="{\"scope\":\"structural_line\",\"seed\":"+f.model_json(seed)+
+                ",\"candidate\":"+f.model_json(candidate)+",\"direction\":"+direction.str()+"]"+
+                ",\"domain\":"+domain.domain.json()+",\"target\":"+quote(target.key())+
+                ",\"snapshot\":"+coverage.json()+"}";
+            throw std::logic_error("line candidate violates formula or observation target");
+        }
+        ++result.scored; ++stats.counts["unique_candidates_scored"];
+        if (safe_region.supported && !safe_region.contains(candidate)) ++stats.counts["line_cross_branch_candidates"];
+        auto gain=coverage.gain(observed);
+        if (!result.model || better(gain,result.gain)) {
+            result.model=candidate; result.gain=gain; result.direction_source=dirs[i].source;
+        }
+        stats.counts["direction_"+dirs[i].source+"_candidate_gain"]+=gain.covered;
+    };
+    if(options.fair) {
+        for(unsigned j=0;j<32 && !budget.done() && result.attempts<options.attempt_cap &&
+            result.scored<options.candidate_cap;++j)
+            for(size_t i=0;i<goals.size();++i) attempt(i,j);
+    } else for(size_t i=0;i<goals.size();++i) for(size_t j=0;j<goals[i].size();++j) attempt(i,j);
+    if (result.model && safe_region.supported && !safe_region.contains(*result.model))
+        ++stats.counts["line_cross_branch_moves"];
+    result.status=result.model ? "candidate" : budget.done() ? "budget_exhausted" : "no_candidate";
+    return result;
+}
 std::vector<uint64_t> new_coverage_bits(const Formula &f, const Coverage &coverage, const Observation &o) {
     std::vector<uint64_t> result(f.nodes.size());
     for (size_t i = 0; i < result.size(); ++i) if (o.visited[i]) {
@@ -382,10 +476,18 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
     // No accept() is possible here: the committed coverage is read-only.
     for (unsigned move = 0; move < options.polish_steps && !budget.done(); ++move) {
         auto proposal = safe(result.model, committed, budget, rng, stats, {}, already_emitted);
+        std::string module="local_safe";
+        if ((!proposal.model || !better(proposal.gain,result.after)) &&
+            options.line && line_supported && !budget.done()) {
+            proposal=line(result.model,committed,budget,rng,stats,{},already_emitted);
+            module="local_line";
+        }
         if (!proposal.model || !better(proposal.gain, result.after)) break;
         result.model = *proposal.model;
         result.after = proposal.gain;
         ++result.moves;
+        if (std::find(result.modules.begin(),result.modules.end(),module)==result.modules.end())
+            result.modules.push_back(module);
         // safe() rebuilt Region, branch conditions, intercepts and intervals from this model.
     }
     auto final_bits = new_coverage_bits(f, committed, f.evaluate(result.model));
@@ -394,7 +496,6 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
         result.added += std::popcount(final_bits[i] & ~original_bits[i]);
         result.lost += std::popcount(original_bits[i] & ~final_bits[i]);
     }
-    if (result.moves) result.modules.push_back("local_safe");
     result.seconds = std::chrono::duration<double>(Clock::now() - begin).count();
     ++stats.counts["polish_calls"];
     stats.counts["polish_moves"] += result.moves;

@@ -73,6 +73,7 @@ Options parse(int argc, char **argv) {
     a.new_generation = a.profile != "schedule";
     if (!a.new_generation) a.search.quotas = a.search.fair = a.search.matching = a.search.polish = false;
     if (a.profile == "directions") a.search.polish = false;
+    a.search.line = a.profile == "line" || a.profile == "full";
     a.search.random = a.variant == "random";
     std::istringstream disabled(a.disable); std::string name;
     while (std::getline(disabled,name,',')) {
@@ -277,7 +278,7 @@ int main(int argc, char **argv) {
         auto accept = [&](const Assignment &seed, const std::string &category) -> AcceptResult {
             if (budget.done() || count>=opt.n) return {};
             seed_id = assignment_id(*f, seed);
-            seed_origin = category.rfind("local",0)==0 ? "local_safe" :
+            seed_origin = category.rfind("line",0)==0 ? "local_line" : category.rfind("local",0)==0 ? "local_safe" :
                           category.rfind("global",0)==0 ? "target" : category;
             refinement = {};
             refinement.model = seed;
@@ -347,7 +348,8 @@ int main(int argc, char **argv) {
                     scheduler.meters[3].cooldown_until = std::max(scheduler.meters[3].cooldown_until,
                                                                global->exploration_budget.cooldown_until);
                     selection = scheduler.choose(budget.elapsed(), budget.left(),
-                        {opt.variant != "global-only", false, f->metric_compatible, true},
+                        {opt.variant != "global-only", search && opt.search.line && search->line_supported,
+                         f->metric_compatible, true},
                         global->target_budget.requested_timeout_ms, global->exploration_budget.requested_timeout_ms);
                     if (!selection) {
                         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -379,15 +381,19 @@ int main(int argc, char **argv) {
                                 (stalled < 3 || round % 3 == 0) &&
                                 (recent_local_cost < 0.1 || recent_local_gain >= 1 || round % 3 == 0);
                 if (selection) do_local = selection->kind == ActionKind::LocalSafe;
-                if (do_local && search) {
+                bool do_line = search && opt.search.line && search->line_supported &&
+                    (selection ? selection->kind == ActionKind::LocalLine : do_local && round%3==0);
+                if ((do_local || do_line) && search) {
                     Budget generation; generation.parent = &work_budget;
                     generation.seconds = work_budget.left() * (opt.search.polish ? .65 : 1.0);
-                    auto batch = search->safe(current,coverage,generation,rng,stats,seed_bank,already_emitted);
+                    auto batch = do_line ? search->line(current,coverage,generation,rng,stats,seed_bank,already_emitted) :
+                                           search->safe(current,coverage,generation,rng,stats,seed_bank,already_emitted);
                     action_status = batch.status;
                     if (batch.model) {
                         current = *batch.model;
                         if (batch.gain.covered || batch.gain.observed || stalled>=2)
-                            accept(current,batch.gain.covered ? "local_gain" : batch.gain.observed ? "local_observation" : "local_fill");
+                            accept(current,std::string(do_line ? "line_" : "local_")+
+                                (batch.gain.covered ? "gain" : batch.gain.observed ? "observation" : "fill"));
                         else {
                             if (seed_bank.size()==16) seed_bank.erase(seed_bank.begin());
                             seed_bank.push_back(current);

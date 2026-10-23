@@ -1,5 +1,6 @@
 #pragma once
 #include "core.hpp"
+#include "line.hpp"
 #include <unordered_set>
 
 namespace lia {
@@ -8,6 +9,7 @@ struct SearchOptions {
     bool line = false, repair = false, random = false;
     unsigned direction_cap = 20, candidate_cap = 24, attempt_cap = 256, polish_steps = 6;
     double polish_seconds = .06;
+    LineLimits line_limits;
 };
 struct DirectionSystem {
     size_t width = 0;
@@ -66,14 +68,20 @@ std::string assignment_id(const Formula &f, const Assignment &model);
 class Search {
     Formula &f;
     std::set<std::string> action_scored;
+    std::unique_ptr<AffineSyntax> syntax;
+    std::optional<StructuralEquations> structural;
   public:
     TargetManager targets;
     SearchOptions options;
     std::string last_failure;
     Assignment last_candidate;
+    bool line_supported = true;
     explicit Search(Formula &formula) : f(formula), targets(formula) {}
     void begin_action() { action_scored.clear(); }
     CandidateBatch safe(const Assignment &seed, const Coverage &coverage, Budget &budget,
+        std::mt19937_64 &rng, Stats &stats, const std::vector<Assignment> &history,
+        const std::function<bool(const std::string &)> &already_emitted);
+    CandidateBatch line(const Assignment &seed, const Coverage &coverage, Budget &budget,
         std::mt19937_64 &rng, Stats &stats, const std::vector<Assignment> &history,
         const std::function<bool(const std::string &)> &already_emitted);
     PolishResult polish_candidate(const Assignment &seed, const Coverage &committed,
