@@ -100,6 +100,7 @@ class Search {
     // Synthetic mechanism tests only. Production leaves both empty.
     std::function<std::vector<Target>()> diagnostic_targets;
     std::optional<std::vector<Direction>> diagnostic_directions;
+    std::function<void(const Assignment &,const Observation &,Gain)> candidate_observer;
     explicit Search(Formula &formula) : f(formula), targets(formula) {}
     void begin_action() { action_scored.clear(); }
     CandidateBatch safe(const Assignment &seed, const Coverage &coverage, Budget &budget,

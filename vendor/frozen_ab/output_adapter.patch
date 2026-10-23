@@ -1,0 +1,180 @@
+--- 269de45/src/main.cpp
++++ src/ab_adapter.cpp
+@@ -1,4 +1,6 @@
++// Generated from exact AB 269de45 by scripts/make_ab_adapter.py; never edit generation logic here.
+ #include "core.hpp"
++#include "ab_output.hpp"
+ #include <algorithm>
+ #include <filesystem>
+ #include <fstream>
+@@ -11,8 +13,9 @@
+     std::string input, output = ".", mode = "benchmark", variant = "full", audit;
+     unsigned n = 1000, seed = 0;
+     double seconds = 900;
++    bool output_polish=false;
+ };
+-void signal_handler(int) { interrupted = 1; }
++void signal_handler(int) { interrupted = 1; output_refiner::cancel(); }
+ Options parse(int argc, char **argv) {
+     Options a;
+     for (int i = 1; i < argc; ++i) {
+@@ -40,6 +43,8 @@
+             a.mode = v;
+         else if (k == "--variant")
+             a.variant = v;
++        else if (k == "--output-polish")
++            a.output_polish = v == "true";
+         else if (k == "--audit-values")
+             a.audit = v;
+         else
+@@ -123,6 +128,9 @@
+         std::set<std::string> emitted;
+         std::vector<Assignment> seed_bank;
+         unsigned count = 0;
++        FormalOutput formal(*f,budget,opt.output_polish,opt.seed,opt.output,typed,samples,emission);
++        formal.input_path=opt.input;
++        std::function<std::string()> isolation_snapshot;
+         double last_checkpoint = 0;
+         auto checkpoint = [&]() {
+             if (budget.elapsed() - last_checkpoint < 1)
+@@ -130,10 +138,10 @@
+             auto temporary = fs::path(opt.output) / "progress.tmp";
+             {
+                 std::ofstream out(temporary);
+-                out << "{\"status\":\"running_checkpoint\",\"samples\":" << count
+-                    << ",\"elapsed\":" << budget.elapsed() << ",\"covered\":" << coverage.covered()
++                out << "{\"status\":\"running_checkpoint\",\"samples\":" << formal.count
++                    << ",\"elapsed\":" << budget.elapsed() << ",\"covered\":" << formal.covered
+                     << ",\"total\":" << f->total_bits() << ",\"statistics\":" << stats.json()
+-                    << ",\"source_sha256\":" << quote(LIA_SOURCE_SHA) << "}\n";
++                    << ",\"source_sha256\":" << quote(LIA_SOURCE_SHA) << formal.fields(count,coverage.covered()) << "}\n";
+                 if (!out)
+                     throw std::runtime_error("checkpoint write failed");
+             }
+@@ -142,7 +150,7 @@
+         };
+         ProgressFeedback round_feedback;
+         auto accept = [&](const Assignment &m, const std::string &category) -> AcceptResult {
+-            if (count >= opt.n || budget.done())
++            if (formal.count >= opt.n || budget.done())
+                 return {};
+             auto key = f->key(m);
+             if (emitted.count(key)) {
+@@ -166,32 +174,7 @@
+             auto g = coverage.gain(o);
+             if (budget.done()) return {};
+             Timer t(stats, "write");
+-            double time = budget.elapsed();
+-            std::ostringstream line;
+-            line << "{\"index\":" << count << ",\"elapsed\":" << std::setprecision(10) << time
+-                 << ",\"category\":" << quote(category) << ",\"new_coverage\":" << g.covered
+-                 << ",\"new_observations\":" << g.observed
+-                 << ",\"covered\":" << coverage.covered() + g.covered << ",\"total\":" << f->total_bits()
+-                 << ",\"assignment\":" << f->model_json(m) << "}\n";
+-            typed << line.str();
+-            typed.flush();
+-            if (!typed)
+-                throw std::runtime_error("model output write failed");
+-            if (samples.is_open()) {
+-                std::ostringstream legacy;
+-                legacy << count << ": ";
+-                for (size_t i = 0; i < m.size(); ++i)
+-                    legacy << f->nodes[f->variables[i]].expr.decl().name().str() << ":" << m[i] << ";";
+-                legacy << '\n';
+-                samples << legacy.str();
+-                samples.flush();
+-                if (!samples)
+-                    throw std::runtime_error("legacy output write failed");
+-            }
+-            emission << count << "," << std::setprecision(10) << budget.elapsed() << '\n';
+-            emission.flush();
+-            if (!emission)
+-                throw std::runtime_error("timestamp write failed");
++            const double extra_before=formal.extra_seconds;
+             coverage.accept(o);
+             emitted.insert(key);
+             if (seed_bank.size() == 16)
+@@ -201,6 +184,12 @@
+             ++stats.counts["output_" + category];
+             AcceptResult result{true, g.covered, g.observed};
+             round_feedback.add(result);
++            const auto guard=isolation_snapshot?isolation_snapshot():std::string();
++            formal.deliver(m,o,category,count-1,coverage.covered());
++            if(isolation_snapshot && isolation_snapshot()!=guard)
++                throw std::logic_error("output polish modified frozen generator state");
++            if(isolation_snapshot) ++stats.counts["raw_generator_isolation_checks"];
++            stats.times["write"]-=formal.extra_seconds-extra_before;
+             return result;
+         };
+         std::string status = "sample_limit";
+@@ -242,7 +231,17 @@
+             std::string cached_signature;
+             unsigned round = 0, stalled = 0;
+             double recent_local_gain = 0, recent_local_cost = 0;
+-            while (count < opt.n && !budget.done()) {
++            if(opt.mode!="benchmark") isolation_snapshot=[&] {
++                std::ostringstream out;out<<rng<<'|'<<stalled<<'|'<<recent_local_gain<<'|'<<recent_local_cost
++                    <<'|'<<count<<'|'<<round_feedback.coverage<<'|'<<round_feedback.observations<<'|'<<f->key(current)<<coverage.json();
++                for(const auto &model:seed_bank) out<<f->key(model)<<'|';
++                if(global) {
++                    out<<global->blocked_models()<<global->query_smt2()<<global->exploration_query_smt2();
++                    for(const auto &core:global->conflicts.cores) for(int id:core) out<<id<<',';
++                }
++                return out.str();
++            };
++            while (formal.count < opt.n && !budget.done()) {
+                 ++round;
+                 round_feedback = {};
+                 std::vector<Target> targets;
+@@ -256,6 +255,7 @@
+                                 (recent_local_cost < 0.1 || recent_local_gain >= 1 || round % 3 == 0);
+                 if (do_local) {
+                     auto batch_start = Clock::now();
++                    const double extra_at_batch_start=formal.extra_seconds;
+                     Observation seed_observation;
+                     {
+                         Timer t(stats, "coverage_scoring");
+@@ -424,7 +424,7 @@
+                         recent_local_gain = 0.7 * recent_local_gain + 0.3 * best_gain.covered;
+                         recent_local_cost =
+                             0.7 * recent_local_cost +
+-                            0.3 * std::chrono::duration<double>(Clock::now() - batch_start).count();
++                            0.3 * (std::chrono::duration<double>(Clock::now() - batch_start).count()-(formal.extra_seconds-extra_at_batch_start));
+                         if (!progress && recent_local_cost > 0.1 && recent_local_gain < 1)
+                             ++stats.counts["local_analysis_cost_dominates"];
+                     } else {
+@@ -432,7 +432,7 @@
+                         log("{\"kind\":\"local_unsupported\",\"reason\":" + quote(r->reason) + "}");
+                     }
+                 }
+-                if (count >= opt.n || budget.done())
++                if (formal.count >= opt.n || budget.done())
+                     break;
+                 if (!progress || !do_local) {
+                     auto res = f->metric_compatible ? global->query(targets, budget, stats)
+@@ -475,20 +475,20 @@
+                 checkpoint();
+             }
+             if (status == "running")
+-                status = count >= opt.n ? "sample_limit" : interrupted ? "interrupted" : "time_limit";
++                status = formal.count >= opt.n ? "sample_limit" : interrupted ? "interrupted" : "time_limit";
+         }
+         if (interrupted)
+             status = "interrupted";
+         std::ofstream summary(fs::path(opt.output) / "summary.json");
+-        summary << "{\"status\":" << quote(status) << ",\"samples\":" << count << ",\"requested\":" << opt.n
++        summary << "{\"status\":" << quote(status) << ",\"samples\":" << formal.count << ",\"requested\":" << opt.n
+                 << ",\"elapsed\":" << budget.elapsed() << ",\"seed\":" << opt.seed
+                 << ",\"variant\":" << quote(opt.variant) << ",\"mode\":" << quote(opt.mode)
+                 << ",\"metric_compatible\":" << (f->metric_compatible ? "true" : "false")
+-                << ",\"covered\":" << coverage.covered() << ",\"total\":" << f->total_bits()
++                << ",\"covered\":" << formal.covered << ",\"total\":" << f->total_bits()
+                 << ",\"z3\":" << quote(Z3_get_full_version()) << ",\"version\":" << quote(LIA_VERSION)
+                 << ",\"source_sha256\":" << quote(LIA_SOURCE_SHA) << ",\"statistics\":" << stats.json()
+-                << "}\n";
+-        std::cout << status << ": " << count << " samples, " << coverage.covered() << "/" << f->total_bits()
++                << formal.fields(count,coverage.covered()) << "}\n";
++        std::cout << status << ": " << formal.count << " samples, " << formal.covered << "/" << f->total_bits()
+                   << " covered bits, " << budget.elapsed() << " s\n";
+         return interrupted ? 130 : 0;
+     } catch (const std::exception &e) {

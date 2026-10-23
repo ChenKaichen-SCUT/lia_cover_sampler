@@ -559,7 +559,10 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
         result.candidates_per_step.push_back(scored);
         ++stats.counts["polish_candidates_per_step_"+std::to_string(scored)];
         if(!proposal.model || !better(proposal.gain,result.after)) {
-            ++stats.counts[proposal.model?"diag_polish_batch_CANDIDATE_CANNOT_IMPROVE":"diag_polish_batch_NO_NEW_CANDIDATE_FOUND"];
+            if(options.diagnostics) {
+                const std::string reason=proposal.model?"diag_polish_batch_CANDIDATE_CANNOT_IMPROVE":"diag_polish_batch_NO_NEW_CANDIDATE_FOUND";
+                ++stats.counts[reason];stats.times[reason]+=step.elapsed();
+            }
             if(!options.polish_split || ++flat>=options.polish_flat_steps) break;
             continue;
         }

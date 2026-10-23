@@ -56,6 +56,7 @@ struct DiagnosticUnit {
     }
     void finish(const std::string &fallback) {
         std::string status=reasons.empty()?fallback:reasons.size()==1?*reasons.begin():"MIXED_REASONS";
+        if(!trace) {event("direction",status,"terminal",work_seconds);return;}
         std::ostringstream extra;extra<<",\"reasons\":[";bool comma=false;
         for(const auto &r:reasons) {if(comma) extra<<',';extra<<quote(r);comma=true;}
         extra<<"],\"stage_counts\":{";comma=false;

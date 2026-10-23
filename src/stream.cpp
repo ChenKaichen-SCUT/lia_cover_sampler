@@ -93,7 +93,7 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         if (!region->supported) {
             result.status="unsupported";
             batch.event("batch",budget.done()?"DIRECTION_GENERATION_INCOMPLETE":"FEASIBILITY_UNSUPPORTED","region",
-                budget.elapsed(),diagnostic_budget(budget,false,false,false));return result;
+                std::chrono::duration<double>(Clock::now()-begin).count(),diagnostic_budget(budget,false,false,false));return result;
         }
         system.equations=region->eq;
         for (auto [i,v]:region->boolean) {(void)v;system.booleans.insert(i);}
@@ -110,7 +110,8 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         std::unique_ptr<DiagnosticUnit> diagnostic;
     };
     std::vector<std::unique_ptr<State>> directions;
-    std::set<std::string> scored{f.key(seed)};
+    const auto base_key=f.key(seed);
+    std::set<std::string> scored{base_key};
     auto arm=[&](State &state) {
         state.slice.start=Clock::now();state.slice.parent=&budget;state.slice.label="direction";
         state.slice.seconds=std::min(budget.left(),std::max(.001,budget.seconds/std::max(1U,std::min(dc,4U))));
@@ -122,11 +123,11 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         auto target=state.goals[state.next++];
         const auto target_start=Clock::now();
         bool witness=false,constructed=false,validated=false;
-        std::string detail=",\"target_node\":"+std::to_string(target.node)+",\"target_bit\":"+
-            std::to_string(target.bit)+",\"target_desired\":"+(target.desired?"true":"false");
+        std::string detail=diagnostic_trace ? ",\"target_node\":"+std::to_string(target.node)+",\"target_bit\":"+
+            std::to_string(target.bit)+",\"target_desired\":"+(target.desired?"true":"false") : "";
         auto outcome=[&](const std::string &code,const std::string &stage,const std::string &extra="") {
             state.diagnostic->event("target",code,stage,std::chrono::duration<double>(Clock::now()-target_start).count(),
-                detail+extra+diagnostic_budget(state.slice,witness,constructed,validated),true);
+                diagnostic_trace ? detail+extra+diagnostic_budget(state.slice,witness,constructed,validated) : "",true);
         };
         ++result.attempts;++result.direction_attempts[i];++stats.counts["candidate_attempts"];
         ++stats.counts["direction_"+state.direction.source+"_attempts"];
@@ -166,7 +167,7 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         }
         witness=z.has_value();
         if(z) {
-            detail+=",\"z\":"+quote(z->get_str());
+            if(diagnostic_trace) detail+=",\"z\":"+quote(z->get_str());
             state.diagnostic->event("stage","WITNESS_FOUND","witness",0,detail);
             if(diagnostic_boundary) diagnostic_boundary("witness_found");
         }
@@ -180,7 +181,7 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         if(state.slice.done()) state.diagnostic->event("stage","BUDGET_OBSERVED","before_deduplication",0,
             diagnostic_budget(state.slice,witness,constructed,validated));
         auto key=f.key(candidate);
-        bool same=key==f.key(seed),in_batch=scored.count(key),in_action=action_scored.count(key),in_output=emitted(key);
+        bool same=key==base_key,in_batch=scored.count(key),in_action=action_scored.count(key),in_output=emitted(key);
         // Preserve the original short-circuit insertion semantics and fixed primary priority.
         bool duplicate=!scored.insert(key).second || in_output || !action_scored.insert(key).second;
         if(duplicate) {
@@ -217,6 +218,7 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         if(!line_mode && !reached) state.diagnostic->event("stage","NUMERIC_HIT_NOT_OBSERVED","observation",0,detail);
         outcome(gain.covered?"NEW_COVERAGE":gain.observed?"NEW_OBSERVATION_ONLY":"ZERO_INCREMENT","coverage",
             ",\"gain\":"+std::to_string(gain.covered)+",\"new_observations\":"+std::to_string(gain.observed));
+        if(candidate_observer) candidate_observer(candidate,observed,gain);
         ++result.scored;++stats.counts["unique_candidates_scored"];
         if(!state.candidates++) ++stats.counts[prefix+"directions_produced_candidates"];
         ++stats.counts[prefix+"direction_"+state.direction.source+"_successes"];
@@ -247,7 +249,7 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
             state->diagnostic->context(f,seed,direction.delta,scope.to_smt2(),system.signature());
         }
         state->diagnostic->event("stage","DIRECTION_GENERATED","direction");
-        if(!system.kernel(direction.delta)) throw std::logic_error("diagnostic direction violates declared equality scope");
+        if((diagnostic_trace || diagnostic_directions) && !system.kernel(direction.delta)) throw std::logic_error("diagnostic direction violates declared equality scope");
         state->diagnostic->event("stage","DIRECTION_VALID","direction");
         auto phase=[&](const std::string &code,const std::string &stage,const std::string &extra="") {
             state->diagnostic->event("phase",code,stage,std::chrono::duration<double>(Clock::now()-preparation_start).count(),extra,code!="NONZERO_FEASIBLE");
@@ -338,7 +340,8 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
             for(int i:system.booleans) query.add(delta[i]==0);
             query.add(z3::mk_or(nonzero));proof=",\"proof_query\":"+quote(query.to_smt2());
         }
-        batch.event("batch",proved?"NO_DIRECTION_PROVED":"DIRECTION_GENERATION_INCOMPLETE","direction_generation",0,
+        batch.event("batch",proved?"NO_DIRECTION_PROVED":"DIRECTION_GENERATION_INCOMPLETE","direction_generation",
+            std::chrono::duration<double>(Clock::now()-begin).count(),
             diagnostic_budget(budget,false,false,false)+proof);
     }
     if(result.model && line_mode && region && region->supported && !region->contains(*result.model))
