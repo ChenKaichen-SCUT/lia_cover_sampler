@@ -195,6 +195,8 @@ class Global {
 
   public:
     ConflictCache conflicts;
+    std::optional<Assignment> invalid_exploration_model;
+    std::string exploration_query_smt2() { return exploration.to_smt2(); }
     SolveBudgetState target_budget, exploration_budget;
     unsigned pack_size = 4;
     bool use_cache = true;

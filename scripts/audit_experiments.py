@@ -36,6 +36,8 @@ def audit_job(payload):
         result.pop("filtered_curve")
         return result
     folder = run_root / job["run"]
+    if not folder.is_dir():
+        raise ValueError(f"missing raw run folder: {folder}")
     formula = ROOT / "benchmarks" / job["instance"]
     if hashlib.sha256(formula.read_bytes()).hexdigest() != job["input_sha256"]:
         raise ValueError("benchmark differs from the immutable run manifest")
@@ -158,6 +160,8 @@ def audit_job(payload):
     summary = folder / "summary.json"
     if summary.exists():
         report["sampler"] = json.loads(summary.read_text())
+        if variant != "highdiv" and report["sampler"]["samples"] != len(assignments):
+            raise ValueError(f"sampler count differs from complete model lines: {folder}")
     elif (folder / "progress.json").exists():
         report["sampler"] = json.loads((folder / "progress.json").read_text())
         report["statistics_partial"] = True

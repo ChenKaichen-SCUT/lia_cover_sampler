@@ -1,0 +1,21 @@
+{
+  "trigger_run": "results/round2_formal/control_ab_time/raw/pb2010_normalized-j3048_8-sat.smt2/seed-0",
+  "aborted_batch": "results/round2_formal",
+  "frozen_original_commit": "500cef8",
+  "short_replays": {
+    "runs": 12,
+    "seconds": 10,
+    "failures": 0
+  },
+  "long_replays": {
+    "runs": 12,
+    "seconds": 60,
+    "failures": 1,
+    "failing_run": "raw/control-long-5"
+  },
+  "finding": "Native solver model violates 124 original assertions; all 2791 extracted values equal native values. Independent substitution validation is invalid.",
+  "workaround": "Use Z3_mk_simple_solver for exploration from construction and rebuild, avoiding the default combined solver path. Original formula and constraints unchanged.",
+  "limitation": "The exact internal Z3 defect is not proven; preserve all failure artifacts and validate every formal output.",
+  "protocol": "Correctness repair after held-out case failure; no instance-specific parameter or strategy tuning; restart all formal tasks in a new directory.",
+  "audit_path_incident": "First diagnostic audit used a not-yet-created ancestor with ../../raw, yielding missing paths. It was rejected on raw-count review, retained as verified_path_error, and rerun with absolute paths; auditor now refuses missing run directories and checks summary count against complete lines."
+}

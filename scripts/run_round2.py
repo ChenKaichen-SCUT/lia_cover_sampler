@@ -35,7 +35,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--binary",type=Path,default=ROOT/"build/lia_cover_sampler")
-    p.add_argument("--control-binary",type=Path,default=ROOT/"build/round2/control_ab/lia_cover_sampler")
+    p.add_argument("--control-binary",type=Path,default=ROOT/"build/round2/control_ab_fixed/lia_cover_sampler")
     p.add_argument("--seconds",type=float,default=900)
     p.add_argument("--jobs",type=int,default=12)
     p.add_argument("--split",choices=["development","all"],default="all")

@@ -713,8 +713,15 @@ int main(int argc, char **argv) {
                 std::ofstream(out / "search_context.json") << search->last_failure << '\n';
                 std::ofstream(out / "candidate.json") << f->model_json(search->last_candidate) << '\n';
             }
-            if (global)
+            if (global) {
                 std::ofstream(out / "query.smt2") << global->query_smt2();
+                if (global->invalid_exploration_model) {
+                    std::ofstream(out / "exploration_candidate.json") << f->model_json(*global->invalid_exploration_model);
+                    std::ofstream(out / "exploration_query.smt2") << global->exploration_query_smt2();
+                }
+            }
+            if (fs::exists(fs::path(opt.output)/"config.json"))
+                fs::copy_file(fs::path(opt.output)/"config.json",out/"config.json",fs::copy_options::overwrite_existing);
         }
         return 2;
     }

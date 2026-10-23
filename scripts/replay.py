@@ -19,6 +19,18 @@ if (a.bundle / "failure.json").exists():
     command = [str(a.binary.resolve()), "-i", str(formula.resolve()), "-o", str(a.output.resolve()),
                "-s", str(config["seed"]), "-n", str(config["samples"]), "-t", str(config["seconds"]),
                "--variant", config["variant"], "--mode", "trace"]
+    saved_config = a.bundle / "config.json"
+    if saved_config.exists():
+        settings = json.loads(saved_config.read_text())
+        command += ["--profile", settings["profile"], "--scheduler", settings["scheduler"]]
+        disabled = [name for name in ("quotas", "fair", "matching", "polish", "line", "repair")
+                    if not settings[name]]
+        if disabled:
+            command += ["--disable", ",".join(disabled)]
+        for flag, field in (("--direction-cap", "direction_cap"), ("--candidate-cap", "candidate_cap"),
+                            ("--attempt-cap", "attempt_cap"), ("--polish-steps", "polish_steps")):
+            command += [flag, str(settings[field])]
+        command += ["--polish-ms", str(settings["polish_seconds"] * 1000)]
 elif (a.bundle / "process.json").exists():
     config = json.loads((a.bundle / "process.json").read_text())
     command = config["command"]

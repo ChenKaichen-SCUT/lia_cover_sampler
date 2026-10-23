@@ -200,6 +200,14 @@ int main() {
                   "retries do not duplicate blocks; new exploration model is blocked");
             auto clipped = global.explore(Assignment{0}, budget, stats, 25);
             check(clipped.actual_timeout_ms == 25, "allocation bounds requested timeout");
+            global.exploration_check=[](unsigned) -> std::optional<GlobalResult> {
+                GlobalResult bad; bad.code=SolveStatus::Sat; bad.model=Assignment{-1}; return bad;
+            };
+            bool rejected=false;
+            try { global.explore(Assignment{0},budget,stats); }
+            catch(const std::logic_error &) { rejected=true; }
+            check(rejected && global.invalid_exploration_model==std::optional<Assignment>(Assignment{-1}),
+                  "invalid solver witness rejected and preserved for independent replay");
             ProgressFeedback progress;
             Coverage cov(f); cov.accept(f.evaluate(Assignment{0}));
             auto gain = cov.gain(f.evaluate(Assignment{1}));
