@@ -510,8 +510,15 @@ int main(int argc, char **argv) {
                 values << '\n';
                 std::ofstream(out / "model.json") << f->model_json(current) << '\n';
             }
-            if (global)
+            if (global) {
                 std::ofstream(out / "query.smt2") << global->query_smt2();
+                if (global->invalid_exploration_model) {
+                    std::ofstream(out / "exploration_candidate.json") << f->model_json(*global->invalid_exploration_model);
+                    std::ofstream(out / "exploration_query.smt2") << global->exploration_query_smt2();
+                }
+            }
+            if (fs::exists(fs::path(opt.output)/"config.json"))
+                fs::copy_file(fs::path(opt.output)/"config.json",out/"config.json",fs::copy_options::overwrite_existing);
         }
         return 2;
     }

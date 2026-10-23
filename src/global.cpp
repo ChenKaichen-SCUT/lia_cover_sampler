@@ -18,7 +18,7 @@ void ConflictCache::insert(std::set<int> core) {
     cores.push_back(std::move(core));
 }
 Global::Global(Formula &formula, unsigned seed, unsigned resource_limit)
-    : f(formula), solver(f.ctx), exploration(f.ctx), seed(seed), resource_limit(resource_limit) {
+    : f(formula), solver(f.ctx), exploration(f.ctx, z3::solver::simple{}), seed(seed), resource_limit(resource_limit) {
     solver.add(f.root);
     solver.set("random_seed", seed);
     solver.set("unsat_core", true);
@@ -194,7 +194,7 @@ void Global::block_model(const Assignment &model, Stats &stats) {
 }
 void Global::rebuild_exploration(Stats &stats) {
     Timer timer(stats, "exploration_rebuild");
-    exploration = z3::solver(f.ctx);
+    exploration = z3::solver(f.ctx, z3::solver::simple{});
     exploration.add(f.root);
     exploration.set("random_seed", seed);
     if (resource_limit) exploration.set("rlimit", resource_limit);
@@ -237,7 +237,10 @@ GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &s
         }
     }
     if (out.model) {
-        if (!f.validate(*out.model)) throw std::logic_error("invalid exploration model");
+        if (!f.validate(*out.model)) {
+            invalid_exploration_model = *out.model;
+            throw std::logic_error("invalid exploration model");
+        }
         block_model(*out.model, stats);
     }
     out.status = out.code == SolveStatus::Unsat ? "exploration_exhausted" : status_name(out.code);
