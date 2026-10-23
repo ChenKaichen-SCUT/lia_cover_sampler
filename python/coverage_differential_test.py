@@ -1,5 +1,6 @@
 """Audit every bit/state and the exact evaluation event order against frozen HighDiv."""
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -14,6 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def load_metric():
     path = Path(os.environ.get("HIGHDIV_ROOT", ROOT.parent / "HighDiv-master")) / "HighDiv/my_scripts/calc_metric.py"
+    expected = json.loads((ROOT / "dependencies/source_audit.json").read_text())[
+        "HighDiv/my_scripts/calc_metric.py"]["sha256"]
+    if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+        raise RuntimeError("metric source differs from the frozen evaluator")
     spec = importlib.util.spec_from_file_location("frozen_highdiv_metric", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

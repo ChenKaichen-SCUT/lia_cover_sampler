@@ -3,6 +3,7 @@
 import argparse
 from concurrent.futures import ProcessPoolExecutor
 import csv
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -35,6 +36,8 @@ def audit_job(payload):
         return result
     folder = run_root / job["run"]
     formula = ROOT / "benchmarks" / job["instance"]
+    if hashlib.sha256(formula.read_bytes()).hexdigest() != job["input_sha256"]:
+        raise ValueError("benchmark differs from the immutable run manifest")
     begin = time.perf_counter()
     root = original_formula(formula)
     decls = variables(root)

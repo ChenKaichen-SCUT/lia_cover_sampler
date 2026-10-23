@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Reproduce tables and plots from independently audited online prefixes."""
 import argparse
+from collections import Counter
 import csv
 import json
 from pathlib import Path
@@ -112,6 +113,24 @@ def main():
     (output / "validation.json").write_text(json.dumps(validation,indent=2)+"\n")
     (output / "summary.json").write_text(json.dumps(dict(aggregate=aggregate, paired=paired,
                                                          validation=validation),indent=2)+"\n")
+    contributions = []
+    for method in ("full", "random", "no-cache", "global-only"):
+        for instance, seed in keys:
+            counts, gains = Counter(), Counter()
+            source = a.results / f"final_{method}" / "raw" / instance / f"seed-{seed}" / "models.jsonl"
+            if not source.exists():
+                continue
+            for line in source.open():
+                if not line.endswith("\n"):
+                    continue
+                row = json.loads(line)
+                counts[row["category"]] += 1
+                gains[row["category"]] += row["new_coverage"]
+            for category, count in counts.items():
+                contributions.append(dict(method=method, instance=instance, seed=seed, category=category,
+                                          samples=count, new_bits=gains[category]))
+    if contributions:
+        write_csv(output / "contributions.csv", contributions)
     if a.plots:
         import matplotlib
         matplotlib.use("Agg")

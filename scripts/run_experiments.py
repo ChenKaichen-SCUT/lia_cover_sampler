@@ -31,6 +31,8 @@ def main():
     p.add_argument("--samples", type=int, default=1000)
     p.add_argument("--jobs", type=int, default=12)
     a = p.parse_args()
+    if a.variant == "highdiv" and (ROOT / "results/BASELINE_FROZEN.json").exists():
+        p.error("HighDiv baseline is frozen. Reuse its saved samples; do not run it again.")
     if not 1 <= a.jobs <= 12 or a.seconds <= 0 or a.samples <= 0:
         p.error("jobs must be 1..12; seconds/samples must be positive")
     a.output = a.output.resolve()
