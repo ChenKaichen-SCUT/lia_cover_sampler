@@ -4,7 +4,9 @@
 
 要求见 [指引](docs/指引.md)，结果见 [中文分析报告](docs/实验报告.md)，细节见 [实现说明](docs/实现说明.md)。正式实验只使用 benchmarks 中用户抽取的 **9 个实例**，不运行 HighDiv 全量数据集。
 
-最新结果见 [900 秒两组独立实验报告](docs/900秒实验报告.md)：固定时间下 HighDiv / LIA 平均覆盖率为 55.733% / 56.106%，样本总数为 206,438 / 33,254；双方均完成 1000 个样本的六个案例中，平均覆盖率为 76.651% / 76.592%。四批原始结果、逐案例审计、完整压缩包和可复现分析脚本均已保存；包含超时的九案例终点与严格等样本量比较分别报告。
+第一轮冻结结果见 [900 秒两组独立实验报告](docs/900秒实验报告.md)：固定时间下 HighDiv / LIA 平均覆盖率为 55.733% / 56.106%，样本总数为 206,438 / 33,254；双方均完成 1000 个样本的六个案例中，平均覆盖率为 76.651% / 76.592%。四批原始结果、逐案例审计、完整压缩包和可复现分析脚本均已保存；包含超时的九案例终点与严格等样本量比较分别报告。
+
+第二轮按更新后的指引增加独立控制预算、动作调度、方向配额、单模型改进、精确跨分支区间集合和目标包修复。配置、12 槽混合队列与复现命令见 [第二轮实现与复现](docs/第二轮实现与复现.md)。
 
 ## 构建与测试
 
@@ -100,44 +102,7 @@ runner 用 12 个控制线程管理最多 12 个独立采样进程，各求解�
 
 相同时间组将 --samples 设为双方支持的最大值 4294967295，使数量实际上不构成限制；若解空间耗尽或算法自身结束，仍可能提前停止，需按实际状态报告。相同个数组若超时未满 1000 个，必须报告实际数量，不能标记为已经完成等样本量比较。
 
-以下命令使用本次机器上已构建的冻结依赖和带时间戳的 HighDiv；其他机器须替换对应路径。四个采样批次依次执行，每批最多 12 个并行任务，覆盖率复核也使用 12 个独立进程。种子固定为 0；改为 --seeds 0,1,2 可运行三个种子，每个实例与种子组合在每个实验组各有 900 秒预算。
-
-```bash
-cd /mnt/Space0/SMT_Sampling/lia_cover_sampler
-export HIGHDIV_ROOT=/tmp/lia-highdiv-frozen
-LIA_PYTHON="$HIGHDIV_ROOT/venv/bin/python3"
-
-# 第一组：相同时间，900 秒，不在 1000 个样本处停止。
-"$LIA_PYTHON" scripts/run_experiments.py \
-  --binary /tmp/lia-highdiv-timed/highdiv --variant highdiv --new-highdiv-batch \
-  --benchmarks benchmarks --output results/highdiv_time900 \
-  --seconds 900 --samples 4294967295 --seeds 0 --jobs 12
-
-"$LIA_PYTHON" scripts/run_experiments.py \
-  --binary build/lia_cover_sampler --variant full \
-  --benchmarks benchmarks --output results/lia_time900 \
-  --seconds 900 --samples 4294967295 --seeds 0 --jobs 12
-
-# 第二组：相同个数，目标 1000 个，最多 900 秒。
-"$LIA_PYTHON" scripts/run_experiments.py \
-  --binary /tmp/lia-highdiv-timed/highdiv --variant highdiv --new-highdiv-batch \
-  --benchmarks benchmarks --output results/highdiv_count1000_t900 \
-  --seconds 900 --samples 1000 --seeds 0 --jobs 12
-
-"$LIA_PYTHON" scripts/run_experiments.py \
-  --binary build/lia_cover_sampler --variant full \
-  --benchmarks benchmarks --output results/lia_count1000_t900 \
-  --seconds 900 --samples 1000 --seeds 0 --jobs 12
-
-# 分别计算四个批次的覆盖率，并验证样本。
-for run in highdiv_time900 lia_time900 highdiv_count1000_t900 lia_count1000_t900; do
-  "$LIA_PYTHON" scripts/audit_experiments.py "results/$run" --jobs 12 || break
-done
-```
-
-四批各生成 audit_summary.csv / audit_summary.json，percent 列是原始 wire coverage 的百分比，unique_valid_in_budget 列是预算内有效且去重后的样本数。即使进程达到 900 秒被终止，仍复核截止前完整写出的样本；覆盖率复核的运行时间另计。
-
-四个批次使用独立的新目录；已保存的 30 秒冻结基线保持不变。不要复用已有输出目录。
+第一轮四个批次已经完成，保存于 results/highdiv_time900、results/lia_time900、results/highdiv_count1000_t900、results/lia_count1000_t900。第二轮直接读取这些审计与样本，不再启动两个冻结版本。新算法的两种预算共用一个 12 槽队列，见 [第二轮命令](docs/第二轮实现与复现.md)。
 
 HighDiv + filter 重放冻结候选序列，不再生成候选。样本数覆盖可精确复算；其时间包含实测验证/评分成本，但属于串行重建，不能当作重新运行过的在线包装实验。
 

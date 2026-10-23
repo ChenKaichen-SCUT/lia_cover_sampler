@@ -26,7 +26,8 @@ def read_complete(path):
 
 
 def audit_job(payload):
-    run_root, job, variant, deadline = payload
+    run_root, job, variant, deadline, *options = payload
+    reconstruct_filter = options[0] if options else True
     run_root = Path(run_root)
     cached = run_root / "audit" / job["instance"] / f'seed-{job["seed"]}.json'
     if cached.exists():
@@ -56,8 +57,8 @@ def audit_job(payload):
     stat = Incremental()
     evaluation = metric.ManualSatisfiesMetric(formula.read_text(), stat)
     total = sum(stat.node_total(k, v[2]) for k, v in stat._storage.items())
-    filtering = Incremental()
-    filter_evaluation = metric.ManualSatisfiesMetric(formula.read_text(), filtering)
+    filtering = Incremental() if reconstruct_filter else None
+    filter_evaluation = metric.ManualSatisfiesMetric(formula.read_text(), filtering) if reconstruct_filter else None
     setup = time.perf_counter()-begin
     filtered_clock = setup
     assignments, times, broken = [], {}, 0
@@ -121,6 +122,8 @@ def audit_job(payload):
             first_models.append(a)
         if not duplicate:
             curve.append(dict(k=len(curve)+1, seconds=stamp, covered=stat.covered, total=total))
+        if not reconstruct_filter:
+            continue
         # Score privately. Only commit accepted states to the filter.
         old_storage = filtering._storage.copy()
         old_covered, old_seen = filtering.covered, filtering.seen
@@ -150,7 +153,7 @@ def audit_job(payload):
                   total=total, percent=100*curve[-1]["covered"]/total if curve else 0,
                   filtered_samples=len(filtered_curve),
                   filtered_covered=filtered_curve[-1]["covered"] if filtered_curve else 0,
-                  filter_setup_seconds=setup, filter_reconstructed=True,
+                  filter_setup_seconds=setup, filter_reconstructed=reconstruct_filter,
                   differential=differential_result, invalid_examples=invalid_examples[:10])
     summary = folder / "summary.json"
     if summary.exists():

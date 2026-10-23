@@ -234,6 +234,13 @@ int main() {
             Scheduler retry;
             auto selection=retry.choose(0,10,{false,false,false,true},50,1600);
             check(selection && selection->seconds>=1.6,"scheduler honors exploration requested budget");
+            Scheduler filler;
+            ActionSelection action{ActionKind::LocalSafe,.2,false};
+            ActionResult empty_gain; empty_gain.kind=ActionKind::LocalSafe;
+            empty_gain.elapsed_seconds=.01; empty_gain.emitted_samples=1;
+            for(unsigned i=0;i<100;++i) filler.feedback(action,empty_gain,10);
+            check(filler.meters[0].cooldown_until<=10.2 && filler.meters[0].gain==0,
+                  "distinct fillers retain throughput without invented coverage");
         }
         std::cout << "core tests passed\n";
         return 0;

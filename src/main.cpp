@@ -150,7 +150,12 @@ int main(int argc, char **argv) {
             << ",\"line\":" << opt.search.line << ",\"repair\":" << opt.search.repair
             << ",\"direction_cap\":" << opt.search.direction_cap << ",\"candidate_cap\":" << opt.search.candidate_cap
             << ",\"attempt_cap\":" << opt.search.attempt_cap << ",\"polish_steps\":" << opt.search.polish_steps
-            << ",\"polish_seconds\":" << opt.search.polish_seconds << "}\n";
+            << ",\"polish_seconds\":" << opt.search.polish_seconds
+            << ",\"line_interval_limit\":" << opt.search.line_limits.intervals
+            << ",\"line_dag_limit\":" << opt.search.line_limits.dag_nodes
+            << ",\"line_affine_term_limit\":" << opt.search.line_limits.affine_terms
+            << ",\"line_integer_bits\":" << opt.search.line_limits.integer_bits
+            << ",\"repair_max_calls\":4,\"repair_max_expansions\":2}\n";
         std::ofstream typed(fs::path(opt.output) / "models.jsonl"), samples, trace;
         std::ofstream emission(fs::path(opt.output) / "emission.csv");
         if (!typed)
@@ -198,6 +203,7 @@ int main(int argc, char **argv) {
         PolishResult refinement;
         unsigned polish_flat = 0;
         double polish_cooldown = 0;
+        std::array<double,4> recent_quality{};
         auto already_emitted = [&](const std::string &key) { return emitted.count(key) != 0; };
         auto commit = [&](const Assignment &m, const std::string &category) -> AcceptResult {
             if (count >= opt.n || budget.done())
@@ -288,7 +294,14 @@ int main(int argc, char **argv) {
             if (search && opt.search.polish && category != "initial" &&
                 budget.elapsed() >= polish_cooldown && active_budget->left() > .002) {
                 Budget polish_budget; polish_budget.parent = active_budget;
-                polish_budget.seconds = std::min(active_budget->left(), opt.search.polish_seconds);
+                unsigned origin=seed_origin=="local_safe" ? 0 : seed_origin=="local_line" ? 1 :
+                                seed_origin=="target" ? 2 : 3;
+                double quality=recent_quality[origin];
+                // High-quality seeds need less refinement effort; low-quality seeds
+                // receive the full bounded allowance. Zero outputs never imply infinite Q.
+                double effort=quality>0 ? std::clamp(quality/(1+refinement.before.covered),.25,1.0) : 1.0;
+                polish_budget.seconds = std::min(active_budget->left(), opt.search.polish_seconds*effort);
+                stats.counts["polish_quality_guided_calls"]+=quality>0;
                 refinement = search->polish_candidate(seed,coverage,polish_budget,rng,stats,already_emitted);
                 if (refinement.after.covered > refinement.before.covered) polish_flat = 0;
                 else if (++polish_flat >= 3) polish_cooldown = budget.elapsed() + std::min(1.0, .02*polish_flat);
@@ -643,6 +656,8 @@ int main(int argc, char **argv) {
                         (stats.counts["duplicate_candidate_assignment"] - before_duplicates)) + solver_unique;
                     result.status = result.emitted_new_coverage ? "gain" : result.emitted_samples ? "zero_gain_output" : action_status;
                     scheduler.feedback(*selection, result, budget.elapsed());
+                    recent_quality[static_cast<unsigned>(result.kind)]=
+                        scheduler.meters[static_cast<unsigned>(result.kind)].quality();
                     auto name = action_name(result.kind);
                     stats.action_times[name] += result.elapsed_seconds;
                     ++stats.counts["action_" + name + "_calls"];

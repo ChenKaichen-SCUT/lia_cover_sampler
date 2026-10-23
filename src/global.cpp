@@ -40,6 +40,7 @@ int Global::ensure(Target t) {
     if (e.is_bool())
         q = t.desired ? e : !e;
     else {
+        ++registered_quotients;
         z3::expr h(f.ctx, Z3_mk_fresh_const(f.ctx, "lia_quotient", f.ctx.int_sort()));
         Z period = pow2(t.bit + 1), half = pow2(t.bit), lo = t.desired ? half : Z(0),
           hi = t.desired ? Z(period - 1) : Z(half - 1);
@@ -94,8 +95,7 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
     }
     stats.counts["registered_activations"]=ids.size();
     stats.counts["registered_target_definitions"]=ids.size();
-    stats.counts["registered_quotients"]=std::count_if(registered_targets.begin(),registered_targets.end(),
-        [&](const Target &t){return !f.nodes[t.node].boolean;});
+    stats.counts["registered_quotients"]=registered_quotients;
     if (pack.empty() || budget.done())
         return {{}, "no_target", "", {}, SolveStatus::NoTarget};
     for (int id : pack)
@@ -144,6 +144,9 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
     out.resource_limit = resource_limit;
     out.elapsed_seconds = std::chrono::duration<double>(Clock::now() - begin).count();
     target_budget.observe(out.code, out.elapsed_seconds, budget.total_elapsed(), ms);
+    stats.counts["target_requested_timeout_last_ms"]=target_budget.requested_timeout_ms;
+    stats.counts["target_actual_timeout_last_ms"]=ms;
+    if (!out.detail.empty()) ++stats.counts["target_reason:"+out.detail];
     if (trace) {
         std::ostringstream s;
         s << "{\"kind\":\"global\",\"context\":\"original_formula_only\",\"status\":" << quote(out.status)
@@ -324,6 +327,7 @@ GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &s
     stats.counts["exploration_requested_timeout_last_ms"] = exploration_budget.requested_timeout_ms;
     stats.counts["exploration_actual_timeout_last_ms"] = ms;
     ++stats.counts["exploration_" + out.status];
+    if (!out.detail.empty()) ++stats.counts["exploration_reason:"+out.detail];
     if (trace) trace("{\"kind\":\"exploration\",\"status\":" + quote(out.status) +
         ",\"reason\":" + quote(out.detail) + ",\"actual_timeout_ms\":" + std::to_string(ms) +
         ",\"requested_timeout_ms\":" + std::to_string(exploration_budget.requested_timeout_ms) +

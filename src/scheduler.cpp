@@ -22,6 +22,10 @@ std::optional<ActionSelection> Scheduler::choose(double now, double remaining,
         return meters[a].rate() < meters[b].rate();
     });
     unsigned oldest = *std::min_element(available.begin(), available.end(), [&](unsigned a, unsigned b) {
+        // Obtain a diverse global seed before spending early output slots on small
+        // local moves. This is a cold-start tie break, not a periodic call quota.
+        static const unsigned priority[] = {2,3,1,0};
+        if (meters[a].last_attempt==meters[b].last_attempt) return priority[a]<priority[b];
         return meters[a].last_attempt < meters[b].last_attempt;
     });
     const double credit = .25 + probe_fraction * total_seconds - probe_seconds;
@@ -51,7 +55,9 @@ void Scheduler::feedback(const ActionSelection &selection, const ActionResult &r
         m.failures = 0;
         m.cooldown_until = now;
     } else if (++m.failures >= 3) {
-        m.cooldown_until = now + std::min(2.0, .02 * (m.failures - 2));
+        // Distinct valid fillers are search progress, although they are never
+        // coverage progress. Do not throttle their throughput like failed calls.
+        m.cooldown_until = now + std::min(result.emitted_samples ? .2 : 2.0, .02 * (m.failures - 2));
     }
 }
 void Scheduler::refresh(double now) {

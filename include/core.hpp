@@ -186,6 +186,7 @@ class Global {
     std::vector<z3::expr> activations;
     std::map<unsigned, int> activation_ids;
     std::vector<Target> registered_targets;
+    size_t registered_quotients = 0;
     std::string last_assumptions;
     int ensure(Target t);
     unsigned seed, resource_limit;
