@@ -9,7 +9,7 @@ find_path(Z3_INCLUDE_DIR z3++.h PATHS "${Z3_PREFIX}/include" NO_DEFAULT_PATH REQ
 find_library(Z3_LIBRARY z3 PATHS "${Z3_PREFIX}/lib" NO_DEFAULT_PATH REQUIRED)
 find_library(GMP_LIBRARY gmp REQUIRED)
 find_library(GMPXX_LIBRARY gmpxx REQUIRED)
-add_library(lia_core src/core.cpp src/local.cpp src/global.cpp src/control.cpp src/scheduler.cpp src/search.cpp src/line.cpp)
+add_library(lia_core src/core.cpp src/local.cpp src/global.cpp src/control.cpp src/scheduler.cpp src/search.cpp src/line.cpp src/stream.cpp)
 file(GLOB LIA_SOURCE_FILES CONFIGURE_DEPENDS src/*.cpp include/*.hpp)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${LIA_SOURCE_FILES})
 set(LIA_SOURCE_DIGESTS "")

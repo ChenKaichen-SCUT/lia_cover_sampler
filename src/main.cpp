@@ -87,6 +87,8 @@ Options parse(int argc, char **argv) {
         else if (name == "repair") a.search.repair = false;
         else if (name == "scheduler") a.adaptive = false;
         else if (name == "work_conserving") a.work_conserving = false;
+        else if (name == "streaming") a.search.streaming = false;
+        else if (name == "directional_targets") a.search.directional_targets = false;
         else if (!name.empty()) throw std::invalid_argument("unknown disabled feature " + name);
     }
     if (a.variant == "global-only") a.search.polish = a.search.line = false;
@@ -151,6 +153,7 @@ int main(int argc, char **argv) {
             << ",\"work_conserving\":" << opt.work_conserving
             << ",\"quotas\":" << opt.search.quotas << ",\"fair\":" << opt.search.fair
             << ",\"matching\":" << opt.search.matching << ",\"polish\":" << opt.search.polish
+            << ",\"streaming\":" << opt.search.streaming << ",\"directional_targets\":" << opt.search.directional_targets
             << ",\"line\":" << opt.search.line << ",\"repair\":" << opt.search.repair
             << ",\"direction_cap\":" << opt.search.direction_cap << ",\"candidate_cap\":" << opt.search.candidate_cap
             << ",\"attempt_cap\":" << opt.search.attempt_cap << ",\"polish_steps\":" << opt.search.polish_steps

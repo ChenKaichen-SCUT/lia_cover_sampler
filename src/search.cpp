@@ -27,10 +27,24 @@ std::string assignment_id(const Formula &f, const Assignment &model) {
     std::ostringstream out; out << std::hex << hash; return out.str();
 }
 std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vector<Assignment> &history,
-    const Assignment &base, Budget &budget, std::mt19937_64 &rng, Stats &stats, unsigned cap, bool quotas) {
+    const Assignment &base, Budget &budget, std::mt19937_64 &rng, Stats &stats, unsigned cap, bool quotas, const std::function<bool(const Direction &)> &on_direction) {
     Timer timer(stats, "directions");
     std::array<std::vector<Assignment>, 4> groups;
     std::set<std::vector<Z>> seen;
+    const char *sources[] = {"coordinate", "equation_kernel", "multi_free", "history"};
+    const auto signature=s.signature();
+    std::vector<Direction> result;
+    std::array<size_t,4> positions{};
+    bool halted=false;
+    auto emit=[&](const Assignment &delta,unsigned group) {
+        result.push_back({delta,sources[group],s.scope,signature});
+        ++positions[group]; ++stats.counts["direction_"+std::string(sources[group])+"_selected"];
+        if (on_direction) {
+            const auto started=Clock::now();
+            if (!on_direction(result.back())) halted=true;
+            stats.times["directions"]-=std::chrono::duration<double>(Clock::now()-started).count();
+        }
+    };
     auto add = [&](Assignment d, unsigned group) {
         Z divisor = 0;
         for (const auto &v : d) divisor = gcd(divisor, v);
@@ -41,7 +55,11 @@ std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vec
             break;
         }
         if (!s.kernel(d)) throw std::logic_error("direction outside declared equality scope");
-        if (seen.insert(d).second) groups[group].push_back(std::move(d));
+        if (seen.insert(d).second) {
+            groups[group].push_back(std::move(d));
+            if (on_direction && !halted && result.size()<cap && positions[group]<(cap+3)/4)
+                emit(groups[group].back(),group);
+        }
     };
     std::set<int> used;
     for (const auto &row : s.equations)
@@ -49,7 +67,7 @@ std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vec
     std::vector<int> variables;
     for (size_t i = 0; i < s.width; ++i) if (!s.booleans.count(i)) variables.push_back(i);
     std::shuffle(variables.begin(), variables.end(), rng);
-    for (int i : variables) if (!used.count(i) && groups[0].size() < cap && !budget.done()) {
+    for (int i : variables) if (!used.count(i) && groups[0].size() < cap && !budget.done() && !halted) {
         Assignment d(s.width); d[i] = 1; add(std::move(d), 0);
     }
     std::map<int, std::map<int, Q>> pivots;
@@ -59,7 +77,7 @@ std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vec
         std::map<int, Q> a;
         for (const auto &[i, v] : row.a) a[i] = Q(v);
         while (!a.empty()) {
-            if (budget.done() || operations > 200000) { exact_rank = false; break; }
+            if (halted || budget.done() || operations > 200000) { exact_rank = false; break; }
             int pivot = a.begin()->first;
             auto found = pivots.find(pivot);
             if (found == pivots.end()) {
@@ -112,12 +130,12 @@ std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vec
     if (exact_rank) {
         for (int i : variables) if (!pivots.count(i)) free.push_back(i);
         // Equation-associated free variables have their own quota.
-        for (int i : free) if (used.count(i) && groups[1].size() < cap && !budget.done()) {
+        for (int i : free) if (used.count(i) && groups[1].size() < cap && !budget.done() && !halted) {
             std::vector<Q> v(s.width); v[i] = 1;
             if (auto d = back_substitute(std::move(v))) add(*d, 1);
         }
         // Draw from ALL free variables, not a previously truncated basis.
-        for (unsigned k = 0; free.size() > 1 && k < cap && !budget.done(); ++k) {
+        for (unsigned k = 0; free.size() > 1 && k < cap && !budget.done() && !halted; ++k) {
             std::vector<Q> v(s.width);
             std::shuffle(free.begin(), free.end(), rng);
             unsigned support = std::min<size_t>(free.size(), 2 + rng() % 7);
@@ -125,17 +143,13 @@ std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vec
             if (auto d = back_substitute(std::move(v))) add(*d, 2);
         }
     }
-    for (const auto &m : history) if (!budget.done()) {
+    for (const auto &m : history) if (!budget.done() && !halted) {
         Assignment d(s.width);
         for (size_t i = 0; i < s.width; ++i) d[i] = m[i] - base[i];
         if (s.kernel(d)) add(std::move(d), 3);
         else ++stats.counts["history_direction_wrong_scope"];
     }
-    const char *sources[] = {"coordinate", "equation_kernel", "multi_free", "history"};
-    std::vector<Direction> result;
-    std::array<size_t, 4> positions{};
-    auto signature = s.signature();
-    if (!quotas) {
+    if (!quotas && !on_direction) {
         for (unsigned i=0;i<4 && result.size()<cap;++i)
             for (const auto &delta:groups[i]) {
                 if (result.size()>=cap || budget.done()) break;
@@ -145,12 +159,11 @@ std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vec
         return result;
     }
     // Round-robin reserves capacity for each source and transfers unused quota.
-    while (result.size() < cap && !budget.done()) {
+    while (result.size() < cap && !budget.done() && !halted) {
         bool added = false;
         for (unsigned i = 0; i < 4 && result.size() < cap; ++i)
             if (positions[i] < groups[i].size()) {
-                result.push_back({groups[i][positions[i]++], sources[i], s.scope, signature});
-                ++stats.counts["direction_" + std::string(sources[i]) + "_selected"];
+                emit(groups[i][positions[i]],i);
                 added = true;
             }
         if (!added) break;
@@ -268,9 +281,9 @@ static std::vector<Interval> without_zero(Interval interval) {
     if (!positive.empty) result.push_back(positive);
     return result;
 }
-CandidateBatch Search::safe(const Assignment &seed, const Coverage &coverage, Budget &budget,
+CandidateBatch Search::safe_eager(const Assignment &seed, const Coverage &coverage, Budget &budget,
     std::mt19937_64 &rng, Stats &stats, const std::vector<Assignment> &history,
-    const std::function<bool(const std::string &)> &already_emitted) {
+    const std::function<bool(const std::string &)> &already_emitted, CandidateLimits limits) {
     CandidateBatch result;
     auto observation = f.evaluate(seed);
     Region region(f, seed, observation, budget);
@@ -280,9 +293,9 @@ CandidateBatch Search::safe(const Assignment &seed, const Coverage &coverage, Bu
         DirectionSystem system;
         system.width = seed.size(); system.equations = region.eq;
         for (auto [i, v] : region.boolean) { (void)v; system.booleans.insert(i); }
-        dirs = quota_directions(system, history, seed, budget, rng, stats, options.direction_cap);
+        dirs = quota_directions(system, history, seed, budget, rng, stats, std::min(options.direction_cap,limits.directions));
     } else {
-        for (auto &d : directions(region, rng, stats, options.direction_cap))
+        for (auto &d : directions(region, rng, stats, std::min(options.direction_cap,limits.directions)))
             dirs.push_back({d, "legacy", "safe_region", region.signature()});
     }
     std::vector<std::vector<Target>> goals;
@@ -297,7 +310,7 @@ CandidateBatch Search::safe(const Assignment &seed, const Coverage &coverage, Bu
     std::set<std::string> scored{f.key(seed)};
     result.direction_attempts.resize(goals.size());
     auto attempt = [&](size_t i, size_t target_index) {
-        if (budget.done() || result.attempts >= options.attempt_cap || result.scored >= options.candidate_cap ||
+        if (budget.done() || result.attempts >= std::min(options.attempt_cap,limits.attempts) || result.scored >= std::min(options.candidate_cap,limits.candidates) ||
             target_index >= goals[i].size() || ranges[i].empty()) return;
         ++result.attempts;
         ++result.direction_attempts[i];
@@ -360,7 +373,7 @@ CandidateBatch Search::safe(const Assignment &seed, const Coverage &coverage, Bu
     };
     if (options.fair) {
         for (unsigned round = 0; round < 32 && !budget.done() &&
-             result.attempts < options.attempt_cap && result.scored < options.candidate_cap; ++round)
+             result.attempts < std::min(options.attempt_cap,limits.attempts) && result.scored < std::min(options.candidate_cap,limits.candidates); ++round)
             for (size_t i = 0; i < goals.size(); ++i) attempt(i, round);
     } else {
         for (size_t i = 0; i < goals.size(); ++i)
@@ -369,9 +382,9 @@ CandidateBatch Search::safe(const Assignment &seed, const Coverage &coverage, Bu
     result.status = result.model ? "candidate" : budget.done() ? "budget_exhausted" : "no_candidate";
     return result;
 }
-CandidateBatch Search::line(const Assignment &seed, const Coverage &coverage, Budget &budget,
+CandidateBatch Search::line_eager(const Assignment &seed, const Coverage &coverage, Budget &budget,
     std::mt19937_64 &rng, Stats &stats, const std::vector<Assignment> &history,
-    const std::function<bool(const std::string &)> &already_emitted) {
+    const std::function<bool(const std::string &)> &already_emitted, CandidateLimits limits) {
     CandidateBatch result;
     Timer timer(stats,"line_analysis");
     if (!syntax) syntax=std::make_unique<AffineSyntax>(f,options.line_limits);
@@ -380,7 +393,7 @@ CandidateBatch Search::line(const Assignment &seed, const Coverage &coverage, Bu
     DirectionSystem system;
     system.scope="structural_line"; system.width=seed.size(); system.equations=structural->rows;
     for (size_t i=0;i<seed.size();++i) if (f.nodes[f.variables[i]].boolean) system.booleans.insert(i);
-    auto dirs=quota_directions(system,history,seed,budget,rng,stats,options.direction_cap,options.quotas);
+    auto dirs=quota_directions(system,history,seed,budget,rng,stats,std::min(options.direction_cap,limits.directions),options.quotas);
     std::vector<std::unique_ptr<LineAnalyzer>> analyzers;
     std::vector<std::vector<Target>> goals;
     std::vector<LineDomain> domains;
@@ -404,7 +417,7 @@ CandidateBatch Search::line(const Assignment &seed, const Coverage &coverage, Bu
     std::set<std::string> scored{f.key(seed)};
     result.direction_attempts.resize(goals.size());
     auto attempt=[&](size_t i,size_t j) {
-        if (budget.done() || result.attempts>=options.attempt_cap || result.scored>=options.candidate_cap ||
+        if (budget.done() || result.attempts>=std::min(options.attempt_cap,limits.attempts) || result.scored>=std::min(options.candidate_cap,limits.candidates) ||
             j>=goals[i].size()) return;
         ++result.attempts; ++result.direction_attempts[i]; ++stats.counts["candidate_attempts"];
         ++stats.counts["direction_"+dirs[i].source+"_attempts"];
@@ -454,8 +467,8 @@ CandidateBatch Search::line(const Assignment &seed, const Coverage &coverage, Bu
         stats.counts["direction_"+dirs[i].source+"_candidate_gain"]+=gain.covered;
     };
     if(options.fair) {
-        for(unsigned j=0;j<32 && !budget.done() && result.attempts<options.attempt_cap &&
-            result.scored<options.candidate_cap;++j)
+        for(unsigned j=0;j<32 && !budget.done() && result.attempts<std::min(options.attempt_cap,limits.attempts) &&
+            result.scored<std::min(options.candidate_cap,limits.candidates);++j)
             for(size_t i=0;i<goals.size();++i) attempt(i,j);
     } else for(size_t i=0;i<goals.size();++i) for(size_t j=0;j<goals[i].size();++j) attempt(i,j);
     if (result.model && safe_region.supported && !safe_region.contains(*result.model))

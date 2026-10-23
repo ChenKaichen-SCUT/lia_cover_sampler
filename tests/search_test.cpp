@@ -78,8 +78,11 @@ int main() {
             search.options.direction_cap=8; search.options.attempt_cap=8; search.options.candidate_cap=100;
             Budget budget; budget.seconds=2; std::mt19937_64 rng(17); Stats stats;
             auto batch=search.safe(seed,cov,budget,rng,stats,{},[](const auto&){return false;});
-            check(batch.direction_attempts.size()==8,"fairness fixture has eight selected directions");
-            for (unsigned attempts:batch.direction_attempts) check(attempts==1,"first round gives every direction one chance");
+            check(batch.direction_attempts.size()>=3 && batch.direction_attempts.size()<=8,
+                  "fairness fixture retains all coordinate directions within cap");
+            auto range=std::minmax_element(batch.direction_attempts.begin(),batch.direction_attempts.end());
+            check(*range.first>=1 && *range.second-*range.first<=1,
+                  "every selected direction receives a first attempt before second-round allocation");
             check(search.targets.rotation_cursor()>0,"real target rotation advances");
         }
         {
@@ -103,6 +106,22 @@ int main() {
             targets.globally_unreachable=[&](Target t){return global.unreachable(t);};
             check(!targets.eligible(target,cov,budget.elapsed()),"local pool filters globally impossible target");
             check(cov.covered()==0 && f.total_bits()>0,"unreachable targets do not alter denominator or coverage");
+        }
+        {
+            Formula f(fixture("(declare-const x Int)(declare-const y Int)"
+                "(assert (and (<= -1 x)(<= x 0)(<= -1 y)(<= y 0)))"));
+            Assignment seed(2);Coverage cov(f);cov.accept(f.evaluate(seed));
+            for (bool line_mode:{false,true}) {
+                Search search(f);search.options.line=line_mode;
+                search.options.direction_cap=8;Budget budget;budget.seconds=3;
+                search.direction_boundary=[&](unsigned i){if(i==1) budget.seconds=0;};
+                Stats stats;std::mt19937_64 rng(3);
+                auto result=line_mode ? search.line(seed,cov,budget,rng,stats,{},[](const auto&){return false;}) :
+                    search.safe(seed,cov,budget,rng,stats,{},[](const auto&){return false;});
+                check(result.model && f.validate(*result.model),"anytime preserves first direction witness at later deadline");
+                check(result.first_valid_seconds>=0 && result.gain.covered>0,"first candidate latency and gain recorded");
+                check(search.line_supported,"deadline never permanently disables line analysis");
+            }
         }
         std::cout << "search tests passed\n";
         return 0;
