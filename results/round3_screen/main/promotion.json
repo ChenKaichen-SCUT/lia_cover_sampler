@@ -1,0 +1,33 @@
+{
+  "approved": false,
+  "next_stage": "confirm",
+  "checks": {
+    "candidate_endpoint_mean_nonnegative": true,
+    "candidate_positive_on_two_development_cases": false,
+    "candidate_majority_seed_pairs_nonnegative": false,
+    "candidate_prefix_10_nonnegative": true,
+    "candidate_prefix_50_nonnegative": true,
+    "micro_all_valid": true,
+    "micro_positive_in_two_modules": true,
+    "all_new_models_independently_valid": true
+  },
+  "selected": {
+    "control_ab": {
+      "binary": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/round2/control_ab_fixed/lia_cover_sampler",
+      "args": [],
+      "binary_sha256": "a8d36788502fe3feb685f5acf8ffba555ef8d11c01b1f4dd9f04ea41421629de"
+    },
+    "candidate": {
+      "binary": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/round3/final/lia_cover_sampler",
+      "args": [
+        "--profile",
+        "full"
+      ],
+      "binary_sha256": "ca1364f407eb27a89b2faa18bdf263268f7ac372824450c3e1871dd84fb75068"
+    }
+  },
+  "analysis": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round3_screen/main/analysis/analysis.json",
+  "analysis_sha256": "0f7af89e8cbd769e8f6af6ef1c73a04d3fb556881486e886216667c721ed2bab",
+  "micro_analysis": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round3_snapshots/micro/analysis.json",
+  "criteria": "Predeclared development gates; never use evaluation cases to tune. Failed gates stop long runs."
+}

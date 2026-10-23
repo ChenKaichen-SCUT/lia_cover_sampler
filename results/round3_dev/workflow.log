@@ -1,0 +1,12 @@
+calibrating_concurrency
+failed_preserved
+Traceback (most recent call last):
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/round3_workflow.py", line 59, in <module>
+    if __name__=='__main__':main()
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/round3_workflow.py", line 27, in main
+    selected=calibrate(a.configs,a.prefix_audit,calibration,python);jobs=selected['selected_jobs']
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/calibrate_concurrency.py", line 17, in calibrate
+    subprocess.run([str(python),str(ROOT/'scripts/audit_iteration.py'),str(root),'--jobs',str(jobs)],stdout=log,stderr=subprocess.STDOUT,check=True,cwd=ROOT)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/tmp/lia-highdiv-frozen/venv/bin/python3', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_iteration.py', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round3_dev/concurrency/jobs-6', '--jobs', '6']' returned non-zero exit status 1.

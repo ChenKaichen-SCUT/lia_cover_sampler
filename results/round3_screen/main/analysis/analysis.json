@@ -1,0 +1,167 @@
+{
+  "stage": "screen",
+  "budget_seconds": 120.0,
+  "purpose": "screen paired AB/candidate; unified online time and sample-prefix metrics",
+  "summary": [
+    {
+      "configuration": "control_ab",
+      "cases": 9,
+      "mean_percent": 43.8832325048635,
+      "samples": 6260,
+      "reached_1000": 2
+    },
+    {
+      "configuration": "candidate",
+      "cases": 9,
+      "mean_percent": 44.576851474005394,
+      "samples": 9149,
+      "reached_1000": 3
+    }
+  ],
+  "paired": [
+    {
+      "configuration": "candidate",
+      "metric": "prefix",
+      "budget": 2,
+      "paired": 9,
+      "mean_delta_pp": 12.779348123102679,
+      "median_delta_pp": -3.072469911099709,
+      "wins": 4,
+      "ties": 0,
+      "losses": 5
+    },
+    {
+      "configuration": "candidate",
+      "metric": "prefix",
+      "budget": 5,
+      "paired": 9,
+      "mean_delta_pp": 8.539988492157654,
+      "median_delta_pp": -0.00573399975152622,
+      "wins": 4,
+      "ties": 0,
+      "losses": 5
+    },
+    {
+      "configuration": "candidate",
+      "metric": "prefix",
+      "budget": 10,
+      "paired": 9,
+      "mean_delta_pp": 5.1915171767272525,
+      "median_delta_pp": -1.5023079348999895,
+      "wins": 3,
+      "ties": 0,
+      "losses": 6
+    },
+    {
+      "configuration": "candidate",
+      "metric": "prefix",
+      "budget": 50,
+      "paired": 7,
+      "mean_delta_pp": 10.837674116373101,
+      "median_delta_pp": -2.5841225546880224,
+      "wins": 3,
+      "ties": 0,
+      "losses": 4
+    },
+    {
+      "configuration": "candidate",
+      "metric": "prefix",
+      "budget": 100,
+      "paired": 6,
+      "mean_delta_pp": 8.708909804714681,
+      "median_delta_pp": 8.971827918614213,
+      "wins": 3,
+      "ties": 0,
+      "losses": 3
+    },
+    {
+      "configuration": "candidate",
+      "metric": "prefix",
+      "budget": 1000,
+      "paired": 2,
+      "mean_delta_pp": 0.002951071238854297,
+      "median_delta_pp": 0.002951071238854297,
+      "wins": 1,
+      "ties": 1,
+      "losses": 0
+    },
+    {
+      "configuration": "candidate",
+      "metric": "time",
+      "budget": 5,
+      "paired": 9,
+      "mean_delta_pp": 1.911352588258664,
+      "median_delta_pp": 0,
+      "wins": 3,
+      "ties": 3,
+      "losses": 3
+    },
+    {
+      "configuration": "candidate",
+      "metric": "time",
+      "budget": 10,
+      "paired": 9,
+      "mean_delta_pp": 0.7138235708531918,
+      "median_delta_pp": 0.0,
+      "wins": 3,
+      "ties": 3,
+      "losses": 3
+    },
+    {
+      "configuration": "candidate",
+      "metric": "time",
+      "budget": 30,
+      "paired": 9,
+      "mean_delta_pp": 0.67224780650747,
+      "median_delta_pp": 0.9443427964350946,
+      "wins": 5,
+      "ties": 0,
+      "losses": 4
+    },
+    {
+      "configuration": "candidate",
+      "metric": "time",
+      "budget": 60,
+      "paired": 9,
+      "mean_delta_pp": 0.2676358448977944,
+      "median_delta_pp": 0.0,
+      "wins": 3,
+      "ties": 2,
+      "losses": 4
+    },
+    {
+      "configuration": "candidate",
+      "metric": "time",
+      "budget": 120,
+      "paired": 9,
+      "mean_delta_pp": 0.6936189691418974,
+      "median_delta_pp": -0.16246332629325444,
+      "wins": 2,
+      "ties": 2,
+      "losses": 5
+    }
+  ],
+  "validation": {
+    "valid": 15409,
+    "invalid": 0,
+    "unknown": 0,
+    "malformed": 0,
+    "duplicate": 0,
+    "after_deadline": 0,
+    "timestamp_missing": 0,
+    "incomplete_lines": 0,
+    "coverage_mismatch": 0
+  },
+  "sampling_cpu_seconds": 2147.2593159999997,
+  "sampling_wall_seconds": 240.0952355749905,
+  "audit_cpu_seconds": 396.090101,
+  "audit_wall_seconds": 48.19608787400648,
+  "audit_cache_hits": 0,
+  "workers": 12,
+  "evidence": {
+    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round3_screen/main/plan.json": "e9b0f712b0115c573a2ddf3934c8e92ce75cf0064313b4c86fb847d0e2b65aa2",
+    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round3_screen/main/queue.jsonl": "65c8ff04967ff7477885bc99aa5721a9d31b8ce2403ba8a22186db6835349614",
+    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round3_screen/main/AUDIT_COMPLETE.json": "50cde73261762d819a5d6db89ebe844d6f81711d5e3646b955710941a33f17dd"
+  },
+  "definition": "One immutable online trajectory: time endpoints and unreordered valid distinct sample prefixes; no best-k selection"
+}
