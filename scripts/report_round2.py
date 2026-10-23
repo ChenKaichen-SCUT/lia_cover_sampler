@@ -161,6 +161,8 @@ def main():
                 provenance[r["origin"]][key]+=int(r[key])
     for origin,c in provenance.items():
         out.append(f'| {origin} | {c["samples"]:,} | {c["final_gain"]:,} | {c["seed_gain_retained"]:,} | {c["refinement_added"]:,} | {c["seed_gain_lost"]:,} |')
+    convert={r["origin"]:r for r in origins if r["algorithm"]=="full" and r["protocol"]=="time" and r["instance"].startswith("convert")}
+    out += ["", f'convert 单例的最终新增 bit 按原种子来源为：探索 {int(convert["exploration"]["final_gain"]):,}、全局目标 {int(convert["target"]["final_gain"]):,}、安全局部 {int(convert["local_safe"]["final_gain"]):,}、LineDomain {int(convert["local_line"]["final_gain"]):,}。探索种子的改进新增只有 {int(convert["exploration"]["refinement_added"])} bit、丢失 {int(convert["exploration"]["seed_gain_lost"])} bit，因此不能把该例收益归为局部模命中或跨分支优势。该例 A/B 控制修复版本时间覆盖为 {float(endpoint["control_ab","time",next(r["path"] for r in manifest if r["path"].startswith("convert"))]["percent"]):.3f}%，完整版为 {float(endpoint["full","time",next(r["path"] for r in manifest if r["path"].startswith("convert"))]["percent"]):.3f}%。']
     total_gain=sum(c["final_gain"] for c in provenance.values())
     out += ["", f'探索种子贡献最终新增 bit 的 {100*provenance["exploration"]["final_gain"]/total_gain:.2f}%，local_line 种子贡献 {100*provenance["local_line"]["final_gain"]/total_gain:.2f}%。实际跨安全分支移动只有 {counts["line_cross_branch_moves"]} 次，全部发生于 SMT_random（6 次）与 SMT_real（2 次）；两例时间终点均退化，因此跨分支能力已触发，但本次分析成本没有转化为整体优势。',
             f'全局目标动作另有 {counts["action_target_status_"]:,} 次记录为空状态名，来自修复目标包在没有实际查询时返回默认结果的路径；不能将其归为 SAT、UNSAT 或超时。这是本轮诊断记录仍需补全的缺口，原统计未重标记。']
