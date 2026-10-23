@@ -25,9 +25,30 @@ def read_complete(path):
     return [s.decode() for s in parts if s.endswith(b"\n")], sum(not s.endswith(b"\n") for s in parts)
 
 
+def sampler_metadata(folder, job, allow_interrupted_summary=False):
+    """A deadline kill can interrupt final metadata; never relax model auditing."""
+    summary = folder / "summary.json"
+    interrupted = None
+    if summary.exists():
+        try:
+            return json.loads(summary.read_text()), False, None
+        except json.JSONDecodeError as error:
+            if not (allow_interrupted_summary and job.get("status") == "timeout_partial"
+                    and job.get("returncode") == -9):
+                raise
+            interrupted = dict(reason="deadline_killed_during_summary_write", error=str(error),
+                               bytes=summary.stat().st_size,
+                               sha256=hashlib.sha256(summary.read_bytes()).hexdigest())
+    checkpoint = folder / "progress.json"
+    if checkpoint.exists():
+        return json.loads(checkpoint.read_text()), True, interrupted
+    return None, True, interrupted
+
+
 def audit_job(payload):
     run_root, job, variant, deadline, *options = payload
     reconstruct_filter = options[0] if options else True
+    allow_interrupted_summary = options[1] if len(options) > 1 else False
     run_root = Path(run_root)
     cached = run_root / "audit" / job["instance"] / f'seed-{job["seed"]}.json'
     if cached.exists():
@@ -157,14 +178,15 @@ def audit_job(payload):
                   filtered_covered=filtered_curve[-1]["covered"] if filtered_curve else 0,
                   filter_setup_seconds=setup, filter_reconstructed=reconstruct_filter,
                   differential=differential_result, invalid_examples=invalid_examples[:10])
-    summary = folder / "summary.json"
-    if summary.exists():
-        report["sampler"] = json.loads(summary.read_text())
-        if variant != "highdiv" and report["sampler"]["samples"] != len(assignments):
+    metadata, partial, interrupted = sampler_metadata(folder, job, allow_interrupted_summary)
+    if metadata is not None:
+        report["sampler"] = metadata
+        if not partial and variant != "highdiv" and metadata["samples"] != len(assignments):
             raise ValueError(f"sampler count differs from complete model lines: {folder}")
-    elif (folder / "progress.json").exists():
-        report["sampler"] = json.loads((folder / "progress.json").read_text())
-        report["statistics_partial"] = True
+        if partial:
+            report["statistics_partial"] = True
+    if interrupted is not None:
+        report["interrupted_summary"] = interrupted
     auditdir = run_root / "audit" / job["instance"]
     auditdir.mkdir(parents=True, exist_ok=True)
     target = auditdir / f'seed-{job["seed"]}.json'

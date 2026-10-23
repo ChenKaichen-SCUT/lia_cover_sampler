@@ -3,7 +3,7 @@
 import argparse
 from concurrent.futures import ProcessPoolExecutor,as_completed
 from collections import defaultdict
-import hashlib,json,os,resource,time
+import hashlib,json,os,resource,time,shutil
 from pathlib import Path
 from run_iteration import ROOT,digest,write
 from audit_experiments import audit_job
@@ -27,7 +27,7 @@ def audit_one(payload):
         previous=json.loads(stamp.read_text());hit=previous.get('bindings')==key and previous.get('report_sha256')==digest(report_path)
     if not hit and report_path.exists():
         backup=report_path.with_name(report_path.name+'.stale-'+digest(report_path)[:12]);report_path.replace(backup)
-    report=audit_job((str(root),job,'full',seconds,False))
+    report=audit_job((str(root),job,'full',seconds,False,True))
     after=resource.getrusage(resource.RUSAGE_SELF)
     elapsed=time.monotonic()-started;cpu=after.ru_utime+after.ru_stime-before.ru_utime-before.ru_stime
     if not hit:write(stamp,dict(bindings=key,report_sha256=digest(report_path),audit_seconds=elapsed,audit_cpu_seconds=cpu))
@@ -47,10 +47,16 @@ def audit(root,jobs):
     with ProcessPoolExecutor(max_workers=jobs) as pool:
         for future in as_completed([pool.submit(audit_one,p) for p in payloads]):
             folder,report,usage=future.result();reports[folder].append(report);cost.append(usage)
-    for folder,rows in reports.items():write(Path(folder)/'audit_summary.json',sorted(rows,key=lambda r:(r['instance'],r['seed'])))
+    def preserve(path):
+        if path.exists():shutil.copy2(path,path.with_name(path.name+'.stale-'+digest(path)[:12]))
+    for folder,rows in reports.items():
+        target=Path(folder)/'audit_summary.json';preserve(target)
+        write(target,sorted(rows,key=lambda r:(r['instance'],r['seed'])))
     result=dict(runs=len(cost),all_passed=True,wall_seconds=time.monotonic()-began,cpu_seconds=sum(r['cpu_seconds'] for r in cost),
                 worker_seconds=sum(r['wall_seconds'] for r in cost),cache_hits=sum(r['cache_hit'] for r in cost),workers=jobs)
-    write(root/'AUDIT_COMPLETE.json',result);print(json.dumps(result));return result
+    preserve(root/'AUDIT_COMPLETE.json');write(root/'AUDIT_COMPLETE.json',result)
+    with (root/'audit_attempts.jsonl').open('a') as log:log.write(json.dumps(result)+'\n')
+    print(json.dumps(result));return result
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('root',type=Path);p.add_argument('--jobs',type=int,default=15)

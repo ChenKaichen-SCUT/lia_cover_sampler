@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Background staged workflow. Failed development gates stop; no repeated monitoring required."""
-import argparse,json,os,subprocess,sys,time,traceback
+import argparse,json,os,subprocess,sys,time,traceback,shutil
 from pathlib import Path
 from datetime import datetime,timezone
 from run_iteration import ROOT,digest,write
@@ -10,12 +10,22 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--configs',type=Path,required=True);p.add_argument('--micro-configs',type=Path,required=True)
     p.add_argument('--snapshots',type=Path,required=True);p.add_argument('--prefix-audit',type=Path,required=True)
     p.add_argument('--state',type=Path,default=ROOT/'results/round3_dev/workflow.json')
+    p.add_argument('--resume',action='store_true',help='resume a failed calibration; reuse verified completed generation')
     a=p.parse_args();a.configs=a.configs.resolve();a.micro_configs=a.micro_configs.resolve();a.snapshots=a.snapshots.resolve();a.prefix_audit=a.prefix_audit.resolve()
-    if a.state.exists():raise ValueError('workflow state exists; do not overwrite completed evidence')
+    previous=None;preserved=None
+    if a.state.exists():
+        if not a.resume:raise ValueError('workflow state exists; use explicit resume for a failed calibration')
+        previous=json.loads(a.state.read_text())
+        if previous['status']!='failed_preserved' or any(k in previous for k in ('micro','screen','confirm','final','concurrency')):
+            raise ValueError('only a failed calibration may be resumed by this entry point')
+        if previous['configs_sha256']!=digest(a.configs):raise ValueError('changed configs cannot resume frozen work')
+        preserved=a.state.with_name('workflow.failed-'+digest(a.state)[:12]+'.json');shutil.copy2(a.state,preserved)
+    elif a.resume:raise ValueError('no failed workflow to resume')
     state=dict(status='starting',pid=os.getpid(),started_utc=datetime.now(timezone.utc).isoformat(),configs=str(a.configs),
         configs_sha256=digest(a.configs),prefix_audit=str(a.prefix_audit),snapshots=str(a.snapshots),
         source_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         user_preference='run in background; user will request status',remaining_after_pipeline=['Review full evidence/report, archive final evidence once, push code/results to GitHub'])
+    if previous:state.update(resumed_from=str(preserved),previous_workflow_wall_seconds=previous['workflow_wall_seconds'])
     def update(status,**values):
         state.update(status=status,checked_utc=datetime.now(timezone.utc).isoformat(),**values);write(a.state,state);print(status,flush=True)
     def run(command,log):
@@ -24,7 +34,7 @@ def main():
     try:
         update('calibrating_concurrency')
         calibration=ROOT/'results/round3_dev/concurrency'
-        selected=calibrate(a.configs,a.prefix_audit,calibration,python);jobs=selected['selected_jobs']
+        selected=calibrate(a.configs,a.prefix_audit,calibration,python,resume=a.resume);jobs=selected['selected_jobs']
         update('running_fixed_snapshots',concurrency=str(calibration/'selection.json'),jobs=jobs)
         micro=ROOT/'results/round3_snapshots/micro'
         run([str(python),str(ROOT/'scripts/run_iteration.py'),'--stage','micro','--configs',str(a.micro_configs),
