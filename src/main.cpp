@@ -1,4 +1,6 @@
 #include "core.hpp"
+#include "scheduler.hpp"
+#include <thread>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -10,6 +12,7 @@ namespace fs = std::filesystem;
 struct Options {
     std::string input, output = ".", mode = "benchmark", variant = "full", audit;
     unsigned n = 1000, seed = 0;
+    bool adaptive = true;
     double seconds = 900;
 };
 void signal_handler(int) { interrupted = 1; }
@@ -36,6 +39,10 @@ Options parse(int argc, char **argv) {
             a.seconds = std::stod(v);
         else if (k == "-s")
             a.seed = std::stoul(v);
+        else if (k == "--scheduler") {
+            if (v != "legacy" && v != "adaptive") throw std::invalid_argument("invalid scheduler");
+            a.adaptive = v == "adaptive";
+        }
         else if (k == "--mode")
             a.mode = v;
         else if (k == "--variant")
@@ -240,11 +247,33 @@ int main(int argc, char **argv) {
                 global->trace = log;
             std::vector<Assignment> cached_directions;
             std::string cached_signature;
+            Scheduler scheduler;
             unsigned round = 0, stalled = 0;
             double recent_local_gain = 0, recent_local_cost = 0;
             while (count < opt.n && !budget.done()) {
                 ++round;
                 round_feedback = {};
+                std::optional<ActionSelection> selection;
+                if (opt.adaptive) {
+                    scheduler.meters[3].cooldown_until = std::max(scheduler.meters[3].cooldown_until,
+                                                               global->exploration_budget.cooldown_until);
+                    selection = scheduler.choose(budget.elapsed(), budget.left(),
+                        {opt.variant != "global-only", false, f->metric_compatible, true},
+                        global->target_budget.requested_timeout_ms, global->exploration_budget.requested_timeout_ms);
+                    if (!selection) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        continue;
+                    }
+                }
+                Budget slice;
+                slice.parent = &budget;
+                if (selection) slice.seconds = std::min(budget.left(), selection->seconds);
+                Budget &work_budget = selection ? slice : budget;
+                const unsigned before_count = count;
+                const auto before_candidates = stats.counts["local_candidates"];
+                const auto before_duplicates = stats.counts["duplicate_candidate_assignment"];
+                std::string action_status = "no_gain";
+                unsigned solver_candidates = 0, solver_unique = 0;
                 std::vector<Target> targets;
                 {
                     Timer target_timer(stats, "active_targets");
@@ -254,6 +283,7 @@ int main(int argc, char **argv) {
                 bool do_local = opt.variant != "global-only" && round % 5 != 0 &&
                                 (stalled < 3 || round % 3 == 0) &&
                                 (recent_local_cost < 0.1 || recent_local_gain >= 1 || round % 3 == 0);
+                if (selection) do_local = selection->kind == ActionKind::LocalSafe;
                 if (do_local) {
                     auto batch_start = Clock::now();
                     Observation seed_observation;
@@ -264,7 +294,7 @@ int main(int argc, char **argv) {
                     std::unique_ptr<Region> r;
                     {
                         Timer t(stats, "region");
-                        r = std::make_unique<Region>(*f, current, seed_observation, budget);
+                        r = std::make_unique<Region>(*f, current, seed_observation, work_budget);
                     }
                     if (r->supported) {
                         if (opt.mode == "debug" && !budget.done()) {
@@ -305,7 +335,7 @@ int main(int argc, char **argv) {
                         }
                         std::shuffle(working_directions.begin(), working_directions.end(), rng);
                         for (auto &d : working_directions) {
-                            if (budget.done() || tried >= 32 ||
+                            if (work_budget.done() || tried >= 32 ||
                                 std::chrono::duration<double>(Clock::now() - batch_start).count() > 0.25)
                                 break;
                             Interval range;
@@ -318,7 +348,7 @@ int main(int argc, char **argv) {
                                 continue;
                             }
                             for (auto target : targets) {
-                                if (budget.done() || tried >= 32)
+                                if (work_budget.done() || tried >= 32)
                                     break;
                                 if (f->nodes[target.node].boolean)
                                     continue;
@@ -432,12 +462,13 @@ int main(int argc, char **argv) {
                         log("{\"kind\":\"local_unsupported\",\"reason\":" + quote(r->reason) + "}");
                     }
                 }
-                if (count >= opt.n || budget.done())
-                    break;
-                if (!progress || !do_local) {
-                    auto res = f->metric_compatible ? global->query(targets, budget, stats)
+                if (count < opt.n && !budget.done() && (selection ? selection->kind == ActionKind::TargetSolve : (!progress || !do_local))) {
+                    auto res = f->metric_compatible ? global->query(targets, work_budget, stats)
                                                     : GlobalResult{{}, "metric_incompatible", "", {}};
+                    action_status = res.status;
                     if (res.model) {
+                        ++solver_candidates;
+                        solver_unique += !emitted.count(f->key(*res.model));
                         if (!f->validate(*res.model)) {
                             current = *res.model;
                             throw std::logic_error("global model invalid");
@@ -457,17 +488,43 @@ int main(int argc, char **argv) {
                             seed_bank.push_back(current);
                         }
                     }
-                    if (!progress && stalled >= 2 && !budget.done()) {
-                        auto e = global->explore(current, budget, stats);
+                }
+                if (count < opt.n && !budget.done() && (selection ? selection->kind == ActionKind::Explore : (!progress && stalled >= 2))) {
+                        auto e = global->explore(current, work_budget, stats);
+                        action_status = e.status;
                         if (e.model) {
+                            ++solver_candidates;
+                            solver_unique += !emitted.count(f->key(*e.model));
                             current = *e.model;
                             accept(current, "exploration");
                         } else if (e.status == "exploration_exhausted") {
-                            status = e.status;
-                            break;
+                            if (!selection) { status = e.status; break; }
+                            global->rebuild_exploration(stats);
+                            scheduler.meters[3].cooldown_until = budget.elapsed() + 1;
                         } else if (!seed_bank.empty())
                             current = seed_bank[rng() % seed_bank.size()];
-                    }
+                }
+                if (selection) {
+                    ActionResult result;
+                    result.kind = selection->kind;
+                    result.elapsed_seconds = slice.elapsed();
+                    result.emitted_new_coverage = round_feedback.coverage;
+                    result.emitted_new_observations = round_feedback.observations;
+                    result.emitted_samples = count - before_count;
+                    result.generated_candidates = stats.counts["local_candidates"] - before_candidates + solver_candidates;
+                    result.unique_valid_candidates = result.generated_candidates - solver_candidates + solver_unique -
+                        (stats.counts["duplicate_candidate_assignment"] - before_duplicates);
+                    result.status = result.emitted_new_coverage ? "gain" : result.emitted_samples ? "zero_gain_output" : action_status;
+                    scheduler.feedback(*selection, result, budget.elapsed());
+                    auto name = action_name(result.kind);
+                    stats.action_times[name] += result.elapsed_seconds;
+                    ++stats.counts["action_" + name + "_calls"];
+                    ++stats.counts["action_" + name + "_status_" + result.status];
+                    stats.counts["action_" + name + "_gain"] += result.emitted_new_coverage;
+                    stats.counts["action_" + name + "_samples"] += result.emitted_samples;
+                    stats.counts["action_" + name + "_candidates"] += result.generated_candidates;
+                    stats.counts["action_" + name + "_unique_valid_candidates"] += result.unique_valid_candidates;
+                    if (result.emitted_new_coverage) scheduler.refresh(budget.elapsed());
                 }
                 progress = round_feedback.coverage > 0;
                 if (progress) ++stats.counts["coverage_progress_rounds"];

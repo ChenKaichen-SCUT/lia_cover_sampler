@@ -58,7 +58,7 @@ int Global::ensure(Target t) {
 static SolveStatus classify_unknown(const std::string &reason, const Budget &budget,
                                     unsigned ms, double elapsed, unsigned resources) {
     if (interrupted) return SolveStatus::Cancelled;
-    if (budget.done()) return SolveStatus::BudgetExhausted;
+    if (budget.global_done()) return SolveStatus::BudgetExhausted;
     if (resources && (reason.find("resource") != std::string::npos || reason.find("rlimit") != std::string::npos))
         return SolveStatus::ResourceExhausted;
     if (elapsed * 1000 >= ms * .8 && (reason.find("timeout") != std::string::npos ||
@@ -133,7 +133,7 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
     out.actual_timeout_ms = ms;
     out.resource_limit = resource_limit;
     out.elapsed_seconds = std::chrono::duration<double>(Clock::now() - begin).count();
-    target_budget.observe(out.code, out.elapsed_seconds, budget.elapsed(), ms);
+    target_budget.observe(out.code, out.elapsed_seconds, budget.total_elapsed(), ms);
     if (trace) {
         std::ostringstream s;
         s << "{\"kind\":\"global\",\"context\":\"original_formula_only\",\"status\":" << quote(out.status)
@@ -210,7 +210,7 @@ GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &s
         out.status = status_name(out.code);
         return out;
     }
-    if (budget.elapsed() < exploration_budget.cooldown_until) {
+    if (budget.total_elapsed() < exploration_budget.cooldown_until) {
         out.code = SolveStatus::NoTarget;
         out.status = "cooldown";
         ++stats.counts["exploration_cooldown_skips"];
@@ -245,7 +245,7 @@ GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &s
     out.resource_limit = resource_limit;
     out.elapsed_seconds = std::chrono::duration<double>(Clock::now() - begin).count();
     auto before = exploration_budget.requested_timeout_ms;
-    exploration_budget.observe(out.code, out.elapsed_seconds, budget.elapsed(), ms);
+    exploration_budget.observe(out.code, out.elapsed_seconds, budget.total_elapsed(), ms);
     if (before < exploration_budget.requested_timeout_ms) ++stats.counts["exploration_timeout_growth"];
     stats.counts["exploration_requested_timeout_last_ms"] = exploration_budget.requested_timeout_ms;
     stats.counts["exploration_actual_timeout_last_ms"] = ms;

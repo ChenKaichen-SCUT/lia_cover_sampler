@@ -1,4 +1,5 @@
 #include "core.hpp"
+#include "scheduler.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -209,6 +210,30 @@ int main() {
             ProgressFeedback duplicate;
             duplicate.add({});
             check(duplicate.next_stalled(8)==9, "no invented duplicate progress");
+        }
+        {
+            Scheduler sched; double now = 0;
+            double cheap_early = 0, costly_early = 0, cheap_late = 0;
+            for (int i=0;i<800;++i) {
+                auto choice = sched.choose(now,100,{true,false,true,false},50,50);
+                if (!choice) { now += .01; continue; }
+                ActionResult r; r.kind=choice->kind;
+                bool cheap = r.kind==ActionKind::LocalSafe;
+                r.elapsed_seconds = cheap ? .005 : .08;
+                bool late = now>12;
+                r.emitted_new_coverage = late ? (cheap ? 5 : 0) : (cheap ? 0 : 10);
+                r.emitted_samples = r.emitted_new_coverage ? 1 : 0;
+                if (!late) (cheap ? cheap_early : costly_early) += r.elapsed_seconds;
+                else if (cheap) cheap_late += r.elapsed_seconds;
+                now += r.elapsed_seconds;
+                sched.feedback(*choice,r,now);
+            }
+            check(cheap_early < costly_early*.2,"zero-gain cheap action cannot monopolize actual time");
+            check(cheap_late>0.5,"cooled module is retried after reward changes");
+            check(sched.probe_seconds <= .25 + .15*sched.total_seconds + .1,"probe accounting uses actual cost");
+            Scheduler retry;
+            auto selection=retry.choose(0,10,{false,false,false,true},50,1600);
+            check(selection && selection->seconds>=1.6,"scheduler honors exploration requested budget");
         }
         std::cout << "core tests passed\n";
         return 0;

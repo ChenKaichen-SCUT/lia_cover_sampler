@@ -30,6 +30,13 @@ std::string Stats::json() const {
         first = false;
         o << quote(k) << ':' << v;
     }
+    o << "},\"action_seconds\":{";
+    first = true;
+    for (auto &[k, v] : action_times) {
+        if (!first) o << ',';
+        first = false;
+        o << quote(k) << ':' << v;
+    }
     o << "},\"counts\":{";
     first = true;
     for (auto &[k, v] : counts) {

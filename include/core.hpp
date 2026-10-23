@@ -17,8 +17,14 @@ std::string quote(const std::string &s);
 struct Budget {
     Clock::time_point start = Clock::now();
     double seconds = 900;
+    const Budget *parent = nullptr;
     double elapsed() const { return std::chrono::duration<double>(Clock::now() - start).count(); }
-    double left() const { return std::max(0.0, seconds - elapsed()); }
+    double total_elapsed() const { return parent ? parent->total_elapsed() : elapsed(); }
+    double left() const {
+        double remaining = std::max(0.0, seconds - elapsed());
+        return parent ? std::min(remaining, parent->left()) : remaining;
+    }
+    bool global_done() const { return parent ? parent->global_done() : done(); }
     bool done() const { return interrupted || left() <= 0; }
     unsigned milliseconds(unsigned cap) const {
         return std::max(1U, std::min(cap, static_cast<unsigned>(std::min(left() * 1000, 4294967294.0))));
@@ -26,6 +32,8 @@ struct Budget {
 };
 struct Stats {
     std::map<std::string, double> times;
+    // Parent action costs are deliberately separate from nested stage costs.
+    std::map<std::string, double> action_times;
     std::map<std::string, unsigned long> counts;
     std::string json() const;
 };
