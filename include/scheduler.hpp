@@ -15,6 +15,7 @@ struct ActionResult {
 struct ActionMeter {
     double smooth_gain = 0, smooth_cost = 0, smooth_samples = 0;
     double total_seconds = 0, last_attempt = -1, cooldown_until = 0;
+    double hard_unavailable_until = 0;
     uint64_t calls = 0, gain = 0, samples = 0;
     unsigned failures = 0;
     double rate() const { return smooth_cost > 0 ? smooth_gain / smooth_cost : 0; }
@@ -24,11 +25,17 @@ struct ActionSelection {
     ActionKind kind;
     double seconds;
     bool probe = false;
+    bool bypassed_soft_cooldown = false;
+    std::string reason = "reward_cost";
 };
 class Scheduler {
   public:
     std::array<ActionMeter, 4> meters;
     double total_seconds = 0, probe_seconds = 0, probe_fraction = .15;
+    bool work_conserving = true;
+    std::string no_action_reason;
+    uint64_t soft_cooldown_bypasses = 0, all_actions_soft_cooled = 0;
+    uint64_t hard_unavailable_events = 0, actions_selected_after_cooldown = 0;
     std::optional<ActionSelection> choose(double now, double remaining,
         const std::array<bool, 4> &enabled, unsigned target_ms, unsigned exploration_ms);
     void feedback(const ActionSelection &selection, const ActionResult &result, double now);

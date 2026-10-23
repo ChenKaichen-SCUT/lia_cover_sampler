@@ -1,6 +1,7 @@
 #include "core.hpp"
 #include "scheduler.hpp"
 #include "search.hpp"
+#include "wall.hpp"
 #include <thread>
 #include <algorithm>
 #include <filesystem>
@@ -13,7 +14,7 @@ namespace fs = std::filesystem;
 struct Options {
     std::string input, output = ".", mode = "benchmark", variant = "full", audit;
     unsigned n = 1000, seed = 0;
-    bool adaptive = true, new_generation = true;
+    bool adaptive = true, new_generation = true, work_conserving = true;
     std::string profile = "full", disable;
     SearchOptions search;
     double seconds = 900;
@@ -85,6 +86,7 @@ Options parse(int argc, char **argv) {
         else if (name == "line") a.search.line = false;
         else if (name == "repair") a.search.repair = false;
         else if (name == "scheduler") a.adaptive = false;
+        else if (name == "work_conserving") a.work_conserving = false;
         else if (!name.empty()) throw std::invalid_argument("unknown disabled feature " + name);
     }
     if (a.variant == "global-only") a.search.polish = a.search.line = false;
@@ -97,6 +99,7 @@ Options parse(int argc, char **argv) {
 }
 int main(int argc, char **argv) {
     Budget budget;
+    WallAccounting wall([&] { return budget.elapsed(); });
     Options opt;
     Assignment current;
     std::unique_ptr<Formula> f;
@@ -145,6 +148,7 @@ int main(int argc, char **argv) {
             throw std::runtime_error("output directory already contains a run");
         std::ofstream(fs::path(opt.output)/"config.json") << "{\"profile\":" << quote(opt.profile)
             << ",\"scheduler\":" << quote(opt.adaptive ? "adaptive" : "legacy")
+            << ",\"work_conserving\":" << opt.work_conserving
             << ",\"quotas\":" << opt.search.quotas << ",\"fair\":" << opt.search.fair
             << ",\"matching\":" << opt.search.matching << ",\"polish\":" << opt.search.polish
             << ",\"line\":" << opt.search.line << ",\"repair\":" << opt.search.repair
@@ -183,18 +187,21 @@ int main(int argc, char **argv) {
         auto checkpoint = [&]() {
             if (budget.elapsed() - last_checkpoint < 1)
                 return;
+            wall.enter("checkpoint_and_logging_seconds");
             auto temporary = fs::path(opt.output) / "progress.tmp";
             {
                 std::ofstream out(temporary);
                 out << "{\"status\":\"running_checkpoint\",\"samples\":" << count
                     << ",\"elapsed\":" << budget.elapsed() << ",\"covered\":" << coverage.covered()
                     << ",\"total\":" << f->total_bits() << ",\"statistics\":" << stats.json()
+                    << ",\"wall_timing\":" << wall.json()
                     << ",\"source_sha256\":" << quote(LIA_SOURCE_SHA) << "}\n";
                 if (!out)
                     throw std::runtime_error("checkpoint write failed");
             }
             fs::rename(temporary, fs::path(opt.output) / "progress.json");
             last_checkpoint = budget.elapsed();
+            wall.enter("other_wall_seconds");
         };
         std::mt19937_64 rng(opt.seed);
         ProgressFeedback round_feedback;
@@ -352,9 +359,11 @@ int main(int argc, char **argv) {
             std::vector<Assignment> cached_directions;
             std::string cached_signature;
             Scheduler scheduler;
+            scheduler.work_conserving = opt.work_conserving;
             unsigned round = 0, stalled = 0;
             double recent_local_gain = 0, recent_local_cost = 0;
             while (count < opt.n && !budget.done()) {
+                wall.enter("scheduler_decision_seconds");
                 ++round;
                 round_feedback = {};
                 std::optional<ActionSelection> selection;
@@ -365,11 +374,18 @@ int main(int argc, char **argv) {
                         {opt.variant != "global-only", search && opt.search.line && search->line_supported,
                          f->metric_compatible, true},
                         global->target_budget.requested_timeout_ms, global->exploration_budget.requested_timeout_ms);
+                    stats.counts["soft_cooldown_bypasses"]=scheduler.soft_cooldown_bypasses;
+                    stats.counts["all_actions_soft_cooled"]=scheduler.all_actions_soft_cooled;
+                    stats.counts["hard_unavailable_events"]=scheduler.hard_unavailable_events;
+                    stats.counts["actions_selected_after_cooldown"]=scheduler.actions_selected_after_cooldown;
                     if (!selection) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        ++stats.counts["idle_reason_"+scheduler.no_action_reason];
+                        wall.sleep(std::min(budget.left(),.001));
+                        checkpoint();
                         continue;
                     }
                 }
+                wall.enter("action_wall_seconds");
                 Budget slice;
                 slice.parent = &budget;
                 if (selection) slice.seconds = std::min(budget.left(), selection->seconds);
@@ -628,7 +644,8 @@ int main(int argc, char **argv) {
                     }
                 }
                 if (count < opt.n && !budget.done() && (selection ? selection->kind == ActionKind::Explore : (!progress && stalled >= 2))) {
-                        auto e = global->explore(current, work_budget, stats);
+                        auto e = global->explore(current, work_budget, stats, 0xffffffffU,
+                            selection && selection->bypassed_soft_cooldown);
                         action_status = e.status;
                         if (e.model) {
                             ++solver_candidates;
@@ -642,6 +659,7 @@ int main(int argc, char **argv) {
                         } else if (!seed_bank.empty())
                             current = seed_bank[rng() % seed_bank.size()];
                 }
+                wall.enter("scheduler_decision_seconds");
                 if (selection) {
                     ActionResult result;
                     result.kind = selection->kind;
@@ -678,6 +696,7 @@ int main(int argc, char **argv) {
         }
         if (interrupted)
             status = "interrupted";
+        wall.enter("checkpoint_and_logging_seconds");
         std::ofstream summary(fs::path(opt.output) / "summary.json");
         summary << "{\"status\":" << quote(status) << ",\"samples\":" << count << ",\"requested\":" << opt.n
                 << ",\"elapsed\":" << budget.elapsed() << ",\"seed\":" << opt.seed
@@ -685,7 +704,8 @@ int main(int argc, char **argv) {
                 << ",\"metric_compatible\":" << (f->metric_compatible ? "true" : "false")
                 << ",\"covered\":" << coverage.covered() << ",\"total\":" << f->total_bits()
                 << ",\"z3\":" << quote(Z3_get_full_version()) << ",\"version\":" << quote(LIA_VERSION)
-                << ",\"source_sha256\":" << quote(LIA_SOURCE_SHA) << ",\"statistics\":" << stats.json()
+                << ",\"source_sha256\":" << quote(LIA_SOURCE_SHA) << ",\"wall_timing\":" << wall.json()
+                << ",\"statistics\":" << stats.json()
                 << "}\n";
         std::cout << status << ": " << count << " samples, " << coverage.covered() << "/" << f->total_bits()
                   << " covered bits, " << budget.elapsed() << " s\n";

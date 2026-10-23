@@ -8,18 +8,34 @@ std::string action_name(ActionKind kind) {
 }
 std::optional<ActionSelection> Scheduler::choose(double now, double remaining,
     const std::array<bool, 4> &enabled, unsigned target_ms, unsigned exploration_ms) {
-    if (remaining <= 0) return {};
+    no_action_reason.clear();
+    if (remaining <= 0) { no_action_reason="budget_exhausted"; return {}; }
     std::vector<unsigned> available;
+    std::vector<unsigned> cooled;
     for (unsigned i = 0; i < 4; ++i)
-        if (enabled[i] && now >= meters[i].cooldown_until) available.push_back(i);
-    if (available.empty()) return {};
+        if (enabled[i] && now >= meters[i].hard_unavailable_until) {
+            if (now >= meters[i].cooldown_until) available.push_back(i);
+            else cooled.push_back(i);
+        }
+    bool bypass = available.empty() && !cooled.empty();
+    if (bypass) {
+        ++all_actions_soft_cooled;
+        if (work_conserving) available=cooled;
+        else { no_action_reason="legacy_soft_cooldown"; return {}; }
+    }
+    if (available.empty()) {
+        ++hard_unavailable_events; no_action_reason="all_actions_hard_unavailable"; return {};
+    }
     auto slice = [&](unsigned i) {
         // Permit the solver's own retry state to grow; preparation shares this budget.
         double requested = i == 2 ? target_ms * .001 : i == 3 ? exploration_ms * .001 : .15;
         return std::min(remaining, std::max(.05, requested * 1.25 + .025));
     };
     unsigned best = *std::max_element(available.begin(), available.end(), [&](unsigned a, unsigned b) {
-        return meters[a].rate() < meters[b].rate();
+        auto priority=[&](unsigned i) {
+            return meters[i].rate()/(1+std::max(0.0,meters[i].cooldown_until-now));
+        };
+        return priority(a) < priority(b);
     });
     unsigned oldest = *std::min_element(available.begin(), available.end(), [&](unsigned a, unsigned b) {
         // Obtain a diverse global seed before spending early output slots on small
@@ -35,7 +51,10 @@ std::optional<ActionSelection> Scheduler::choose(double now, double remaining,
     // When every measured action has zero reward, bounded attempts remain necessary;
     // this is search under uncertainty, not a declaration of optimal coverage.
     unsigned selected = no_exploit ? oldest : probe ? oldest : best;
-    return ActionSelection{static_cast<ActionKind>(selected), slice(selected), probe && !no_exploit};
+    if (bypass) ++soft_cooldown_bypasses;
+    if (meters[selected].failures>=3) ++actions_selected_after_cooldown;
+    return ActionSelection{static_cast<ActionKind>(selected), slice(selected), probe && !no_exploit,
+                           bypass, bypass ? "all_soft_cooled_bounded_probe" : "reward_cost"};
 }
 void Scheduler::feedback(const ActionSelection &selection, const ActionResult &result, double now) {
     auto &m = meters[static_cast<unsigned>(result.kind)];

@@ -212,7 +212,7 @@ class Global {
         const std::function<void(const GlobalResult &)> &feedback,
         unsigned max_calls = 4, unsigned max_expansions = 2);
     GlobalResult explore(const Assignment &current, Budget &budget, Stats &stats,
-                         unsigned allocation_ms = 0xffffffffU);
+                         unsigned allocation_ms = 0xffffffffU, bool bypass_soft_cooldown = false);
     size_t blocked_models() const { return blocked_model_keys.size(); }
     bool unreachable(Target target) const {
         auto it = ids.find(target);

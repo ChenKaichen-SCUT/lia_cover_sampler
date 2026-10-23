@@ -278,7 +278,8 @@ void Global::rebuild_exploration(Stats &stats) {
     blocked_model_keys.clear();
     ++stats.counts["exploration_rebuilds"];
 }
-GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &stats, unsigned allocation_ms) {
+GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &stats, unsigned allocation_ms,
+                             bool bypass_soft_cooldown) {
     Timer timer(stats, "exploration_solve");
     const auto begin = Clock::now();
     GlobalResult out;
@@ -287,7 +288,7 @@ GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &s
         out.status = status_name(out.code);
         return out;
     }
-    if (budget.total_elapsed() < exploration_budget.cooldown_until) {
+    if (!bypass_soft_cooldown && budget.total_elapsed() < exploration_budget.cooldown_until) {
         out.code = SolveStatus::NoTarget;
         out.status = "cooldown";
         ++stats.counts["exploration_cooldown_skips"];

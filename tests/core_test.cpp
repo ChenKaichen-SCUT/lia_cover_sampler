@@ -1,5 +1,6 @@
 #include "core.hpp"
 #include "scheduler.hpp"
+#include "wall.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -249,6 +250,28 @@ int main() {
             for(unsigned i=0;i<100;++i) filler.feedback(action,empty_gain,10);
             check(filler.meters[0].cooldown_until<=10.2 && filler.meters[0].gain==0,
                   "distinct fillers retain throughput without invented coverage");
+        }
+        {
+            Scheduler scheduler; double now=0;
+            for (unsigned step=0;step<1000;++step) {
+                auto selection=scheduler.choose(now,100,{true,true,true,true},50,200);
+                check(bool(selection),"soft cooldown must never leave legal work idle");
+                ActionResult result; result.kind=selection->kind; result.elapsed_seconds=.01;
+                result.emitted_samples=step%2;
+                now+=result.elapsed_seconds; scheduler.feedback(*selection,result,now);
+            }
+            check(scheduler.soft_cooldown_bypasses>0,"all-soft-cooled work is retried");
+            for(auto &meter:scheduler.meters) meter.hard_unavailable_until=now+10;
+            check(!scheduler.choose(now,100,{true,true,true,true},50,200),"hard limits honored");
+            check(scheduler.no_action_reason=="all_actions_hard_unavailable","no-action reason explicit");
+            check(scheduler.choose(now+11,100,{true,true,true,true},50,200).has_value(),"hard recovery retries");
+            Scheduler old; old.work_conserving=false;
+            for(auto &meter:old.meters) meter.cooldown_until=10;
+            check(!old.choose(0,100,{true,true,true,true},50,50),"old soft-cooldown ablation retained");
+            double clock=0; WallAccounting wall([&]{return clock;});
+            clock=2; wall.enter("action_wall_seconds");clock=5;wall.enter("scheduler_decision_seconds");
+            clock=6;wall.json();double total=0;for(auto [k,v]:wall.seconds) total+=v;
+            check(total==6 && wall.seconds["action_wall_seconds"]==3,"exclusive wall buckets account for exact mock time");
         }
         std::cout << "core tests passed\n";
         return 0;
