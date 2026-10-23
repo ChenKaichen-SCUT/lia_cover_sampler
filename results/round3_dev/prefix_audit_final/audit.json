@@ -1,0 +1,139 @@
+{
+  "passed": true,
+  "code_path_stop_only": true,
+  "references": [
+    {
+      "source": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/main.cpp",
+      "line": 228,
+      "text": "if (count >= opt.n || budget.done())",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/main.cpp",
+      "line": 305,
+      "text": "if (budget.done() || count>=opt.n) return {};",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/main.cpp",
+      "line": 335,
+      "text": "if (opt.n) {",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/main.cpp",
+      "line": 380,
+      "text": "while (count < opt.n && !budget.done()) {",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/main.cpp",
+      "line": 633,
+      "text": "if (count < opt.n && !budget.done() && (selection ? selection->kind == ActionKind::TargetSolve : (!progress || !do_local))) {",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/main.cpp",
+      "line": 667,
+      "text": "if (count < opt.n && !budget.done() && (selection ? selection->kind == ActionKind::Explore : (!progress && stalled >= 2))) {",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/main.cpp",
+      "line": 721,
+      "text": "status = count >= opt.n ? \"sample_limit\" : interrupted ? \"interrupted\" : \"time_limit\";",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/main.cpp",
+      "line": 727,
+      "text": "summary << \"{\\\"status\\\":\" << quote(status) << \",\\\"samples\\\":\" << count << \",\\\"requested\\\":\" << opt.n",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/main.cpp",
+      "line": 748,
+      "text": "<< \",\\\"samples\\\":\" << opt.n << \",\\\"z3\\\":\" << quote(Z3_get_full_version())",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/tmp/lia-control-diagnose/src/main.cpp",
+      "line": 145,
+      "text": "if (count >= opt.n || budget.done())",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/tmp/lia-control-diagnose/src/main.cpp",
+      "line": 210,
+      "text": "if (opt.n) {",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/tmp/lia-control-diagnose/src/main.cpp",
+      "line": 245,
+      "text": "while (count < opt.n && !budget.done()) {",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/tmp/lia-control-diagnose/src/main.cpp",
+      "line": 435,
+      "text": "if (count >= opt.n || budget.done())",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/tmp/lia-control-diagnose/src/main.cpp",
+      "line": 478,
+      "text": "status = count >= opt.n ? \"sample_limit\" : interrupted ? \"interrupted\" : \"time_limit\";",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/tmp/lia-control-diagnose/src/main.cpp",
+      "line": 483,
+      "text": "summary << \"{\\\"status\\\":\" << quote(status) << \",\\\"samples\\\":\" << count << \",\\\"requested\\\":\" << opt.n",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "source": "/tmp/lia-control-diagnose/src/main.cpp",
+      "line": 503,
+      "text": "<< \",\\\"samples\\\":\" << opt.n << \",\\\"z3\\\":\" << quote(Z3_get_full_version())",
+      "classification": "termination_or_metadata"
+    }
+  ],
+  "source_hashes": {
+    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/main.cpp": "637cdd2de863680806e7af314a9e15afc621596b380c32b274d9f5339b3fe624",
+    "/tmp/lia-control-diagnose/src/main.cpp": "619a109aa30aba426fdc92d269e026cc4ae6701d551b1dcd26cc056f2347e7d2"
+  },
+  "binary_sha256": "ca1364f407eb27a89b2faa18bdf263268f7ac372824450c3e1871dd84fb75068",
+  "trials": [
+    {
+      "seed": 0,
+      "counts": [
+        64,
+        64
+      ],
+      "identical_leading_models": 64,
+      "full_common_prefix_equal": true
+    },
+    {
+      "seed": 1,
+      "counts": [
+        64,
+        64
+      ],
+      "identical_leading_models": 64,
+      "full_common_prefix_equal": true
+    },
+    {
+      "seed": 2,
+      "counts": [
+        64,
+        64
+      ],
+      "identical_leading_models": 64,
+      "full_common_prefix_equal": true
+    }
+  ],
+  "wall_seconds": 2.492938611190766,
+  "conclusion": "1000 and UINT_MAX are both nonzero; cap only stops output, never seeds RNG or allocates solver/action budgets. Controlled prefixes support the code-path audit. Real wall-clock solver deadlines can still cause independently rerun trajectories to diverge.",
+  "allowed_protocol": "one timed run plus its actual unreordered first k distinct valid outputs; missing k is incomplete"
+}

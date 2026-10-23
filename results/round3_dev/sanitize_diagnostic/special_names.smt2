@@ -1,0 +1,1 @@
+(declare-const |x:y;z| Int)(declare-const b Bool)(assert (= |x:y;z| 184467440737095516170))(assert (or b (not b)))

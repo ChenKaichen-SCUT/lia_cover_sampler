@@ -1,0 +1,34 @@
+
+=================================================================
+==63301==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 32 byte(s) in 1 object(s) allocated from:
+    #0 0x71073bad9887 in __interceptor_malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:145
+    #1 0x71073b5f1bf8 in memory::allocate(unsigned long) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x18e2bf8)
+    #2 0x71073b60e742 in mpz_manager<true>::allocate(unsigned int) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x18ff742)
+    #3 0x71073b60ebf2 in mpz_manager<true>::big_set(mpz&, mpz const&) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x18ffbf2)
+    #4 0x71073a03b5ac in mpq_manager<true>::set(mpq&, mpq const&) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x32c5ac)
+    #5 0x71073aefde9b in std::_Function_handler<void (unsigned int), lp::dioph_eq::imp::imp(lp::int_solver&, lp::lar_solver&)::{lambda(unsigned int)#2}>::_M_invoke(std::_Any_data const&, unsigned int&&) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x11eee9b)
+    #6 0x71073ae95611 in lp::lar_solver::update_column_type_and_bound(unsigned int, lp::lconstraint_kind, rational const&, dependency_manager<scoped_dependency_manager<unsigned int>::config>::dependency*) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x1186611)
+    #7 0x71073ae9ebfa in lp::lar_solver::add_var_bound_check_on_equal(unsigned int, lp::lconstraint_kind, rational const&, unsigned int&) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x118fbfa)
+    #8 0x71073a649f8d in smt::theory_lra::imp::add_def_constraint_and_equality(unsigned int, lp::lconstraint_kind, rational const&) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x93af8d)
+    #9 0x71073a64c6d5 in smt::theory_lra::imp::linearize(smt::theory_lra::imp::scoped_internalize_state&) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x93d6d5)
+    #10 0x71073a64aac3 in smt::theory_lra::imp::internalize_def(app*) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x93bac3)
+    #11 0x71073a64b7ed in smt::theory_lra::imp::internalize_term(app*) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x93c7ed)
+    #12 0x71073a6c4f13 in smt::context::internalize_term(app*) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x9b5f13)
+    #13 0x71073a6c55b1 in smt::context::internalize_formula_core(app*, bool) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x9b65b1)
+    #14 0x71073a6c5955 in smt::context::internalize_eq(app*, bool) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x9b6955)
+    #15 0x71073a6c71bc in smt::context::assert_default(expr*, app*) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x9b81bc)
+    #16 0x71073a6c7a1f in smt::context::internalize_assertion(expr*, app*, unsigned int) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x9b8a1f)
+    #17 0x71073a5ec71b in smt::context::internalize_assertions() (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x8dd71b)
+    #18 0x71073a5f8e72 in smt::context::check(unsigned int, expr* const*, bool) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x8e9e72)
+    #19 0x71073ac65b91 in solver_na2as::check_sat_core(unsigned int, expr* const*) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0xf56b91)
+    #20 0x71073ac379b7 in solver::check_sat(unsigned int, expr* const*) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0xf289b7)
+    #21 0x710739ffaa25 in Z3_solver_check (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x2eba25)
+    #22 0x5a12eca3bcef in z3::solver::check() /tmp/lia-highdiv-frozen/venv/include/z3++.h:2823
+    #23 0x5a12eca34f4b in main results/round3_dev/sanitize_diagnostic/z3_only.cpp:5
+    #24 0x710739136d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+    #25 0x710739136e3f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29e3f)
+    #26 0x5a12eca34844 in _start (/tmp/lia-z3-only-sanitize+0x13844)
+
+SUMMARY: AddressSanitizer: 32 byte(s) leaked in 1 allocation(s).

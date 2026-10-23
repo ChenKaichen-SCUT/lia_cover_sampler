@@ -1,0 +1,1 @@
+(declare-const x0 Int)(assert (and (<= -1 x0)(<= x0 0)))(declare-const x1 Int)(assert (and (<= -1 x1)(<= x1 0)))(declare-const x2 Int)(assert (and (<= -1 x2)(<= x2 0)))(declare-const x3 Int)(assert (and (<= -1 x3)(<= x3 0)))(declare-const x4 Int)(assert (and (<= -1 x4)(<= x4 0)))(declare-const x5 Int)(assert (and (<= -1 x5)(<= x5 0)))

@@ -1,0 +1,60 @@
+{
+  "runs": [
+    {
+      "name": "release_cpp",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "build",
+        "--output-on-failure"
+      ],
+      "returncode": 0,
+      "wall_seconds": 0.18113360507413745,
+      "cpu_seconds": 0.14893
+    },
+    {
+      "name": "release_python",
+      "command": [
+        "/tmp/lia-highdiv-frozen/venv/bin/python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "returncode": 0,
+      "wall_seconds": 5.178372361930087,
+      "cpu_seconds": 5.041106
+    },
+    {
+      "name": "asan_ubsan_cpp",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "--output-on-failure"
+      ],
+      "returncode": 0,
+      "wall_seconds": 2.5603482390288264,
+      "cpu_seconds": 2.350355
+    },
+    {
+      "name": "asan_ubsan_python",
+      "command": [
+        "/tmp/lia-highdiv-frozen/venv/bin/python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "returncode": 0,
+      "wall_seconds": 15.514784168917686,
+      "cpu_seconds": 13.813506
+    }
+  ],
+  "all_passed": true,
+  "limitation": "earlier incremental builds and exploratory diagnosis not fully CPU-accounted"
+}

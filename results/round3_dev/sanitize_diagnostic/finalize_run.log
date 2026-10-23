@@ -1,0 +1,9 @@
+
+=================================================================
+==62746==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 11616 byte(s) in 363 object(s) allocated from:
+    #0 0x7f38b9b94887 in __interceptor_malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:145
+    #1 0x7f38b96acbf8 in memory::allocate(unsigned long) (/tmp/lia-highdiv-frozen/venv/lib/libz3.so+0x18e2bf8)
+
+SUMMARY: AddressSanitizer: 11616 byte(s) leaked in 363 allocation(s).
