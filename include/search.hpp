@@ -10,6 +10,9 @@ struct SearchOptions {
     bool line = false, repair = false, random = false;
     bool streaming = true, directional_targets = true, polish_split = true, rotation_fix = true;
     bool diagnostics = true;
+    // Safe polish only: retain the streaming preparation while its base model
+    // stays fixed. Disabled keeps the frozen short-step control path.
+    bool preparation_reuse = false;
     unsigned direction_cap = 20, candidate_cap = 24, attempt_cap = 256, polish_steps = 6;
     double polish_seconds = .06;
     unsigned polish_step_candidates = 4, polish_flat_steps = 2;
@@ -69,6 +72,8 @@ struct CandidateBatch {
     uint64_t attempts = 0, scored = 0, duplicates = 0;
     std::vector<unsigned> direction_attempts;
     double first_valid_seconds = -1, first_positive_seconds = -1;
+    bool budget_exhausted = false;
+    bool attempt_limited = false;
 };
 struct PolishResult {
     Assignment model;
@@ -111,7 +116,9 @@ class Search {
         const std::function<bool(const std::string &)> &already_emitted, CandidateLimits limits = {});
     CandidateBatch generate(bool line_mode, const Assignment &seed, const Coverage &coverage, Budget &budget,
         std::mt19937_64 &rng, Stats &stats, const std::vector<Assignment> &history,
-        const std::function<bool(const std::string &)> &already_emitted, CandidateLimits limits);
+        const std::function<bool(const std::string &)> &already_emitted, CandidateLimits limits,
+        const std::function<bool(const CandidateBatch &, bool)> &batch_boundary = {},
+        unsigned batch_candidates = 0);
     CandidateBatch safe_eager(const Assignment &seed, const Coverage &coverage, Budget &budget,
         std::mt19937_64 &rng, Stats &stats, const std::vector<Assignment> &history,
         const std::function<bool(const std::string &)> &already_emitted, CandidateLimits limits);

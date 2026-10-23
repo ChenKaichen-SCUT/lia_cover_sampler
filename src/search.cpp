@@ -3,6 +3,7 @@
 #include <array>
 #include <bit>
 #include <numeric>
+#include <limits>
 
 namespace lia {
 bool DirectionSystem::kernel(const Assignment &d) const {
@@ -29,6 +30,8 @@ std::string assignment_id(const Formula &f, const Assignment &model) {
 std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vector<Assignment> &history,
     const Assignment &base, Budget &budget, std::mt19937_64 &rng, Stats &stats, unsigned cap, bool quotas, const std::function<bool(const Direction &)> &on_direction) {
     Timer timer(stats, "directions");
+    ++stats.counts["preparation_direction_builds"];
+    Timer preparation_timer(stats, "preparation_direction_seconds");
     std::array<std::vector<Assignment>, 4> groups;
     std::set<std::vector<Z>> seen;
     const char *sources[] = {"coordinate", "equation_kernel", "multi_free", "history"};
@@ -42,7 +45,9 @@ std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vec
         if (on_direction) {
             const auto started=Clock::now();
             if (!on_direction(result.back())) halted=true;
-            stats.times["directions"]-=std::chrono::duration<double>(Clock::now()-started).count();
+            const double callback_seconds=std::chrono::duration<double>(Clock::now()-started).count();
+            stats.times["directions"]-=callback_seconds;
+            stats.times["preparation_direction_seconds"]-=callback_seconds;
         }
     };
     auto add = [&](Assignment d, unsigned group) {
@@ -73,6 +78,8 @@ std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vec
     std::map<int, std::map<int, Q>> pivots;
     uint64_t operations = 0;
     bool exact_rank = true;
+    const auto equality_started=Clock::now();
+    ++stats.counts["preparation_equality_builds"];
     for (const auto &row : s.equations) {
         std::map<int, Q> a;
         for (const auto &[i, v] : row.a) a[i] = Q(v);
@@ -99,6 +106,11 @@ std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vec
         }
         if (!exact_rank) break;
     }
+    const double equality_seconds=std::chrono::duration<double>(Clock::now()-equality_started).count();
+    stats.times["preparation_equality_seconds"]+=equality_seconds;
+    // Direction preparation excludes both equality elimination and its streamed
+    // feasibility/target/scoring callbacks, so these stage costs can be summed.
+    stats.times["preparation_direction_seconds"]-=equality_seconds;
     stats.counts[s.scope + "_equations_last"] = s.equations.size();
     stats.counts[s.scope + "_integer_variables_last"] = variables.size();
     stats.counts[s.scope + "_rank_known_last"] = exact_rank;
@@ -516,9 +528,86 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
     const auto before_observation = f.evaluate(seed);
     result.before = result.after = committed.gain(before_observation);
     auto original_bits = new_coverage_bits(f, committed, before_observation);
-    const unsigned candidate_limit=options.candidate_cap;
+    const unsigned candidate_limit=options.preparation_reuse ? std::min(options.candidate_cap,24U) : options.candidate_cap;
     const auto starting_scored=stats.counts["unique_candidates_scored"];
+    const auto starting_attempts=stats.counts["candidate_attempts"];
+    stats.counts["polish_total_attempt_limit"]=static_cast<unsigned>(std::min<uint64_t>(
+        uint64_t(options.polish_steps)*options.attempt_cap,std::numeric_limits<unsigned>::max()));
+    std::set<std::string> prepared_bases;
     unsigned flat=0;
+    if(options.preparation_reuse) {
+        if(!options.streaming || options.line || !options.polish_step_candidates)
+            throw std::invalid_argument("preparation reuse supports streamed safe-only polish with positive batches");
+        const unsigned batch_limit=std::min(options.polish_steps,6U);
+        const uint64_t total_attempt_cap=uint64_t(batch_limit)*options.attempt_cap;
+        const unsigned attempt_limit=static_cast<unsigned>(std::min<uint64_t>(
+            total_attempt_cap,std::numeric_limits<unsigned>::max()));
+        stats.counts["polish_total_attempt_limit"]=attempt_limit;
+        const unsigned per_batch=std::min(options.polish_step_candidates,4U);
+        while(result.attempted_steps<batch_limit && !budget.done()) {
+            auto used=stats.counts["unique_candidates_scored"]-starting_scored;
+            auto attempts=stats.counts["candidate_attempts"]-starting_attempts;
+            if(used>=candidate_limit || attempts>=attempt_limit) break;
+            // The callback may accept a new result.model. Keep this generation's
+            // base immutable until Region and all direction states are destroyed.
+            const Assignment base=result.model;
+            if(!prepared_bases.insert(f.key(base)).second)
+                ++stats.counts["preparation_repeated_region_builds"];
+            CandidateLimits limits;
+            limits.candidates=candidate_limit-used;limits.attempts=attempt_limit-attempts;
+            bool moved=false;
+            unsigned batches_in_preparation=0;
+            const auto call_start=Clock::now();
+            auto previous_batch_end=call_start;
+            const double offset=std::chrono::duration<double>(call_start-begin).count();
+            auto consume=[&](const CandidateBatch &proposal,bool terminal) {
+                ++result.attempted_steps;++stats.counts["polish_attempted_steps"];
+                if(batches_in_preparation++) ++stats.counts["preparation_reuse_hits"];
+                result.candidates_per_step.push_back(proposal.scored);
+                ++stats.counts["polish_candidates_per_step_"+std::to_string(proposal.scored)];
+                const double elapsed=std::chrono::duration<double>(Clock::now()-previous_batch_end).count();
+                previous_batch_end=Clock::now();
+                if(proposal.budget_exhausted) ++stats.counts["polish_budget_exits"];
+                if(proposal.attempt_limited) ++stats.counts["polish_attempt_limited_batches"];
+                if(proposal.model && better(proposal.gain,result.after)) {
+                    result.model=*proposal.model;result.after=proposal.gain;
+                    ++result.moves;++stats.counts["polish_accepted_steps"];
+                    ++stats.counts["preparation_move_invalidations"];
+                    if(result.modules.empty()) result.modules.push_back("local_safe");
+                    moved=true;flat=0;return false;
+                }
+                if(proposal.budget_exhausted) {
+                    // A failed deadline is incomplete work, not evidence of a
+                    // completed search with no improvement. Its cost and attempts
+                    // remain charged; terminal exits never restart preparation.
+                    if(options.diagnostics) {
+                        ++stats.counts["diag_polish_batch_BUDGET_EXIT"];
+                        stats.times["diag_polish_batch_BUDGET_EXIT"]+=elapsed;
+                    }
+                } else {
+                    ++flat;++stats.counts["polish_completed_flat_batches"];
+                    if(options.diagnostics) {
+                        const std::string reason=proposal.model?"diag_polish_batch_CANDIDATE_CANNOT_IMPROVE":"diag_polish_batch_NO_NEW_CANDIDATE_FOUND";
+                        ++stats.counts[reason];stats.times[reason]+=elapsed;
+                    }
+                }
+                return !terminal && !budget.done() && result.attempted_steps<batch_limit &&
+                    flat<options.polish_flat_steps;
+            };
+            auto batch=generate(false,base,committed,budget,rng,stats,{},already_emitted,
+                limits,consume,per_batch);
+            if(batch.first_valid_seconds>=0 && result.first_valid_seconds<0)
+                result.first_valid_seconds=offset+batch.first_valid_seconds;
+            if(batch.first_positive_seconds>=0 && result.first_positive_seconds<0)
+                result.first_positive_seconds=offset+batch.first_positive_seconds;
+            // No model move means the existing stream either completed, reached
+            // an operation/flat bound, or exhausted a budget. Do not rebuild and
+            // retry the same base, including a proven zero-dimensional region.
+            if(!moved) break;
+        }
+        stats.counts["polish_stopped_by_attempt_budget"]+=
+            stats.counts["candidate_attempts"]-starting_attempts>=attempt_limit;
+    } else {
     // Every helper receives explicit limits; options never change during refinement.
     for (unsigned move=0;move<options.polish_steps && !budget.done();++move) {
         auto used=stats.counts["unique_candidates_scored"]-starting_scored;
@@ -535,6 +624,8 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
         const auto before_step=stats.counts["unique_candidates_scored"];
         CandidateLimits limit;limit.candidates=step_candidates;
         const double offset=std::chrono::duration<double>(Clock::now()-begin).count();
+        if(!prepared_bases.insert(f.key(result.model)).second)
+            ++stats.counts["preparation_repeated_region_builds"];
         auto proposal=safe(result.model,committed,safe_budget,rng,stats,{},already_emitted,limit);
         auto latency=[&](const CandidateBatch &batch,double origin) {
             if(batch.first_valid_seconds>=0 && result.first_valid_seconds<0)
@@ -559,6 +650,9 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
         result.candidates_per_step.push_back(scored);
         ++stats.counts["polish_candidates_per_step_"+std::to_string(scored)];
         if(!proposal.model || !better(proposal.gain,result.after)) {
+            if(proposal.budget_exhausted || step.done())
+                ++stats.counts["polish_budget_exit_as_flat_control"];
+            else ++stats.counts["polish_completed_flat_batches"];
             if(options.diagnostics) {
                 const std::string reason=proposal.model?"diag_polish_batch_CANDIDATE_CANNOT_IMPROVE":"diag_polish_batch_NO_NEW_CANDIDATE_FOUND";
                 ++stats.counts[reason];stats.times[reason]+=step.elapsed();
@@ -571,6 +665,7 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
         if(std::find(result.modules.begin(),result.modules.end(),module)==result.modules.end())
             result.modules.push_back(module);
         // The next call rebuilds all model-dependent region and Reach state.
+    }
     }
     stats.counts["polish_stopped_by_time"]+=budget.done();
     stats.counts["polish_stopped_by_candidate_budget"]+=

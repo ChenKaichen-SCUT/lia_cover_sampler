@@ -73,3 +73,19 @@ target_include_directories(ab_gate_test PRIVATE vendor/frozen_ab/include include
 target_compile_definitions(ab_gate_test PRIVATE lia=frozen_ab)
 target_link_libraries(ab_gate_test PRIVATE frozen_ab_core output_refiner)
 add_test(NAME ab_gate COMMAND ab_gate_test)
+
+add_executable(preparation_probe src/preparation_probe.cpp)
+target_compile_definitions(preparation_probe PRIVATE LIA_PREPARATION_REUSE_AVAILABLE=1)
+target_link_libraries(preparation_probe PRIVATE lia_core)
+add_executable(preparation_reuse_test tests/preparation_reuse_test.cpp)
+target_link_libraries(preparation_reuse_test PRIVATE lia_core)
+add_test(NAME preparation_reuse COMMAND preparation_reuse_test)
+
+# Optional local regression against the untouched round-four archive. The
+# paired mechanism experiment itself uses one common instrumented executable.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/round5/frozen_lia_core.a")
+  add_executable(preparation_probe_frozen src/preparation_probe.cpp)
+  target_include_directories(preparation_probe_frozen PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/build/round5/frozen_include" "${Z3_INCLUDE_DIR}")
+  target_compile_definitions(preparation_probe_frozen PRIVATE LIA_SOURCE_SHA="89e71b8-frozen-core")
+  target_link_libraries(preparation_probe_frozen PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/build/round5/frozen_lia_core.a" "${Z3_LIBRARY}" "${GMPXX_LIBRARY}" "${GMP_LIBRARY}")
+endif()

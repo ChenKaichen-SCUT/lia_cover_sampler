@@ -70,16 +70,36 @@ CandidateBatch Search::line(const Assignment &seed,const Coverage &coverage,Budg
 }
 CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Coverage &coverage,Budget &budget,
     std::mt19937_64 &rng,Stats &stats,const std::vector<Assignment> &history,
-    const std::function<bool(const std::string &)> &emitted,CandidateLimits limits) {
+    const std::function<bool(const std::string &)> &emitted,CandidateLimits limits,
+    const std::function<bool(const CandidateBatch &,bool)> &batch_boundary,unsigned batch_candidates) {
     CandidateBatch result; const auto begin=Clock::now();
+    CandidateBatch pending;
+    bool stopped=false,notified=false,pending_budget_failure=false;
+    if(batch_boundary && (!batch_candidates || line_mode))
+        throw std::invalid_argument("prepared batches require a positive safe candidate quota");
+    auto notify_batch=[&](bool terminal) {
+        if(!batch_boundary) return;
+        pending.budget_exhausted=pending_budget_failure || budget.done();
+        pending.attempt_limited=pending.attempts>=options.attempt_cap && pending.scored<batch_candidates;
+        pending.status=pending.budget_exhausted?"budget_exhausted":pending.model?"candidate":"no_candidate";
+        stopped=!batch_boundary(pending,terminal);
+        notified=true;pending=CandidateBatch{};pending_budget_failure=false;
+    };
     DiagnosticUnit batch(stats,diagnostic_trace,options.diagnostics,line_mode?"line":"safe","batch",line_mode?"structural_line":"safe_region");
     Timer action_path(stats,line_mode ? "line_analysis" : "safe_generation");
     const std::string prefix=line_mode ? "line_" : "safe_";
     const unsigned dc=std::min(options.direction_cap,limits.directions);
     const unsigned cc=std::min(options.candidate_cap,limits.candidates);
-    const unsigned ac=std::min(options.attempt_cap,limits.attempts);
-    auto full=[&]{return budget.done() || result.scored>=cc || result.attempts>=ac;};
-    auto observation=f.evaluate(seed);
+    // Prepared calls own several original-sized batches. The caller supplies the
+    // remaining whole-polish bound; each batch still has the original attempt cap.
+    const unsigned ac=batch_boundary?limits.attempts:std::min(options.attempt_cap,limits.attempts);
+    auto full=[&]{return stopped || budget.done() || result.scored>=cc || result.attempts>=ac;};
+    Observation observation;
+    {
+        Timer evaluation_timer(stats,"preparation_base_evaluation_seconds");
+        ++stats.counts["preparation_base_evaluations"];
+        observation=f.evaluate(seed);
+    }
     std::unique_ptr<Region> region;
     DirectionSystem system;system.width=seed.size();
     if (line_mode) {
@@ -89,15 +109,24 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         system.scope="structural_line";system.equations=structural->rows;
         for(size_t i=0;i<seed.size();++i) if(f.nodes[f.variables[i]].boolean) system.booleans.insert(i);
     } else {
-        region=std::make_unique<Region>(f,seed,observation,budget);
+        {
+            Timer region_timer(stats,"preparation_region_seconds");
+            ++stats.counts["preparation_region_builds"];
+            region=std::make_unique<Region>(f,seed,observation,budget);
+            if(region->supported) {
+                system.equations=region->eq;
+                for (auto [i,v]:region->boolean) {(void)v;system.booleans.insert(i);}
+            }
+        }
         if (!region->supported) {
             result.status="unsupported";
+            result.budget_exhausted=budget.done();
             batch.event("batch",budget.done()?"DIRECTION_GENERATION_INCOMPLETE":"FEASIBILITY_UNSUPPORTED","region",
-                std::chrono::duration<double>(Clock::now()-begin).count(),diagnostic_budget(budget,false,false,false));return result;
+                std::chrono::duration<double>(Clock::now()-begin).count(),diagnostic_budget(budget,false,false,false));
+            notify_batch(true);return result;
         }
-        system.equations=region->eq;
-        for (auto [i,v]:region->boolean) {(void)v;system.booleans.insert(i);}
     }
+    if(diagnostic_boundary) diagnostic_boundary("region_prepared");
     struct State {
         Direction direction;
         Budget slice;
@@ -116,7 +145,7 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         state.slice.start=Clock::now();state.slice.parent=&budget;state.slice.label="direction";
         state.slice.seconds=std::min(budget.left(),std::max(.001,budget.seconds/std::max(1U,std::min(dc,4U))));
     };
-    auto attempt=[&](size_t i) {
+    auto attempt_once=[&](size_t i) {
         auto &state=*directions[i];
         if (full() || state.next>=state.goals.size()) return;
         arm(state);Timer per_source(stats,prefix+"direction_"+state.direction.source+"_seconds");
@@ -126,10 +155,14 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         std::string detail=diagnostic_trace ? ",\"target_node\":"+std::to_string(target.node)+",\"target_bit\":"+
             std::to_string(target.bit)+",\"target_desired\":"+(target.desired?"true":"false") : "";
         auto outcome=[&](const std::string &code,const std::string &stage,const std::string &extra="") {
+            if(code=="TARGET_ANALYSIS_BUDGET_EXCEEDED") {
+                pending_budget_failure=true;result.budget_exhausted=true;
+            }
             state.diagnostic->event("target",code,stage,std::chrono::duration<double>(Clock::now()-target_start).count(),
                 diagnostic_trace ? detail+extra+diagnostic_budget(state.slice,witness,constructed,validated) : "",true);
         };
         ++result.attempts;++result.direction_attempts[i];++stats.counts["candidate_attempts"];
+        if(batch_boundary) ++pending.attempts;
         ++stats.counts["direction_"+state.direction.source+"_attempts"];
         std::optional<Z> z;
         try {
@@ -186,6 +219,7 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         bool duplicate=!scored.insert(key).second || in_output || !action_scored.insert(key).second;
         if(duplicate) {
             ++result.duplicates;++stats.counts["duplicate_candidates"];
+            if(batch_boundary) ++pending.duplicates;
             std::string flags=",\"duplicate_flags\":{\"base\":"+std::string(same?"true":"false")+
                 ",\"batch\":"+(in_batch?"true":"false")+",\"action\":"+(in_action?"true":"false")+
                 ",\"committed\":"+(in_output?"true":"false")+"},\"exhaustiveness\":\"selected_witness_only\"";
@@ -230,10 +264,25 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
            (gain.covered==result.gain.covered && gain.observed>result.gain.observed)) {
             result.model=candidate;result.gain=gain;result.direction_source=state.direction.source;
         }
+        if(batch_boundary) {
+            ++pending.scored;
+            if(!pending.model || gain.covered>pending.gain.covered ||
+               (gain.covered==pending.gain.covered && gain.observed>pending.gain.observed)) {
+                pending.model=candidate;pending.gain=gain;pending.direction_source=state.direction.source;
+            }
+            if(pending.first_valid_seconds<0) pending.first_valid_seconds=elapsed;
+            if(gain.covered && pending.first_positive_seconds<0) pending.first_positive_seconds=elapsed;
+            if(pending.scored>=batch_candidates) notify_batch(false);
+        }
         if(line_mode && !budget.done()) {
             if(!region) region=std::make_unique<Region>(f,seed,observation,budget);
             if(region->supported && !region->contains(candidate)) ++stats.counts["line_cross_branch_candidate"];
         }
+    };
+    auto attempt=[&](size_t i) {
+        attempt_once(i);
+        if(batch_boundary && !stopped && pending.attempts>=options.attempt_cap)
+            notify_batch(false);
     };
     auto prepare=[&](const Direction &direction) {
         if(full()) return false;
@@ -252,6 +301,9 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         if((diagnostic_trace || diagnostic_directions) && !system.kernel(direction.delta)) throw std::logic_error("diagnostic direction violates declared equality scope");
         state->diagnostic->event("stage","DIRECTION_VALID","direction");
         auto phase=[&](const std::string &code,const std::string &stage,const std::string &extra="") {
+            if(code=="FEASIBILITY_BUDGET_EXCEEDED" || (code=="FEASIBILITY_NOT_CHECKED" && state->slice.done())) {
+                pending_budget_failure=true;result.budget_exhausted=true;
+            }
             state->diagnostic->event("phase",code,stage,std::chrono::duration<double>(Clock::now()-preparation_start).count(),extra,code!="NONZERO_FEASIBLE");
         };
         auto alpha=[&](int node)->std::optional<Z> {
@@ -259,10 +311,16 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
             catch(const LineFailure &) {return {};}
             catch(const std::domain_error &) {return {};}
         };
-        state->goals=diagnostic_targets ? diagnostic_targets() : options.matching ?
-            (options.directional_targets ? targets.related(coverage,direction.delta,rng,16,state->slice,stats,alpha) :
-             targets.select(coverage,rng,32,state->slice,&direction.delta)) : active_targets(f,coverage,rng,32);
+        {
+            Timer targets_timer(stats,"preparation_target_pool_seconds");
+            ++stats.counts["preparation_target_pool_builds"];
+            state->goals=diagnostic_targets ? diagnostic_targets() : options.matching ?
+                (options.directional_targets ? targets.related(coverage,direction.delta,rng,16,state->slice,stats,alpha) :
+                 targets.select(coverage,rng,32,state->slice,&direction.delta)) : active_targets(f,coverage,rng,32);
+        }
         if(!state->goals.empty() && !state->slice.done()) {
+            Timer feasibility_timer(stats,"preparation_feasibility_seconds");
+            ++stats.counts["preparation_feasibility_builds"];
             ++stats.counts[prefix+"directions_analyzed"];
             if(line_mode) {
                 state->analyzer=std::make_unique<LineAnalyzer>(f,seed,state->direction.delta,*syntax,state->slice);
@@ -318,6 +376,10 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         }
         if(!remaining) break;
     }
+    // A final partial batch is real work even when no candidate was found.
+    // Never retry an incomplete preparation after returning from this stack.
+    if(batch_boundary && !stopped && (pending.attempts || pending.scored || !notified || pending_budget_failure || budget.done()))
+        notify_batch(true);
     for(const auto &state:directions) {
         if(line_mode && state->exact && !state->candidates) ++stats.counts["line_exact_but_no_candidate"];
         if(state->next<state->goals.size()) state->diagnostic->event("stage",budget.done()?"BUDGET_EXIT":"BOUNDED_SEARCH_INCOMPLETE","remaining_targets",0,diagnostic_budget(budget,false,false,false));
@@ -355,6 +417,7 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         ++stats.counts[prefix+"batches_with_positive_candidate"];
     }
     result.status=result.model ? "candidate" : budget.done() ? "budget_exhausted" : "no_candidate";
+    result.budget_exhausted=result.budget_exhausted || budget.done();
     batch.event("batch",result.model?(result.gain.covered?"NEW_COVERAGE":result.gain.observed?"NEW_OBSERVATION_ONLY":"ZERO_INCREMENT"):
         budget.done()?"BUDGET_EXIT":"NO_NEW_CANDIDATE_FOUND","terminal",std::chrono::duration<double>(Clock::now()-begin).count(),
         ",\"proof_scope\":\"bounded_search_only\"");
