@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Check raw/formal state separation and observation containment on completed output transactions."""
-import argparse,json,sys,time,resource
+import argparse,json,sys,time,resource,shutil
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor,as_completed
 from run_iteration import ROOT,digest,write
@@ -9,15 +9,25 @@ sys.path.insert(0,str(ROOT/'python'))
 from validation import original_formula,variables,verify
 from coverage_differential_test import load_metric
 
+def records(path,interrupted):
+    lines,broken=read_complete(path)
+    if broken and not interrupted:raise ValueError('Incomplete record without a recorded deadline interruption: '+str(path))
+    # A killed write is evidence of an unfinished transaction, not an emitted model.
+    # Complete malformed records must still fail JSON parsing.
+    return [json.loads(s) for s in lines],broken
+
 def one(payload):
     root,name,job=payload;root=Path(root);folder=root/name/job['run'];formula=ROOT/'benchmarks'/job['instance']
     start=time.monotonic();cpu=time.process_time()
     public_audit=json.loads((root/name/'audit'/job['instance']/f'seed-{job["seed"]}.json').read_text())
-    assert not any(v for k,v in public_audit['counts'].items() if k!='valid')
-    def records(file):
-        lines,broken=read_complete(folder/file);return [json.loads(s) for s in lines],broken
-    emitted,broken=records('models.jsonl');raw,raw_incomplete=records('raw_generator.jsonl');transactions,transaction_incomplete=records('output_transactions.jsonl')
-    assert not broken
+    assert not any(v for k,v in public_audit['counts'].items() if k not in ('valid','incomplete_lines'))
+    interrupted=job['status']=='timeout_partial'
+    emitted,broken=records(folder/'models.jsonl',interrupted)
+    raw,raw_incomplete=records(folder/'raw_generator.jsonl',interrupted)
+    transactions,transaction_incomplete=records(folder/'output_transactions.jsonl',interrupted)
+    assert broken==public_audit['counts']['incomplete_lines']
+    assert len(emitted)==public_audit['unique_valid_in_budget']
+    if broken:assert len(raw)>len(transactions), 'Incomplete output cannot belong to a completed transaction'
     assert [r['raw_generator_index'] for r in transactions]==list(range(len(transactions)))
     assert len(transactions)<=len(raw)
     assert all(0<=r['raw_generator_index']<len(raw) for r in emitted)
@@ -47,12 +57,14 @@ def one(payload):
     result=dict(configuration=name,instance=job['instance'],seed=job['seed'],raw_models=len(raw),emitted_models=len(emitted),
         raw_covered=raw[-1]['raw_generator_covered'] if raw else 0,emitted_covered=public_audit['covered'],total=public_audit['total'],
         completed_raw_transactions=complete+1,pending_raw_models=len(raw)-complete-1,
-        incomplete_raw_lines=raw_incomplete,incomplete_transaction_lines=transaction_incomplete,
+        incomplete_formal_lines=broken,incomplete_raw_lines=raw_incomplete,incomplete_transaction_lines=transaction_incomplete,
         all_raw_valid=True,processed_prefix_observations_preserved=True,
         completed_cost_within_allowance=cost_ok,cost=last,wall_seconds=time.monotonic()-start,cpu_seconds=time.process_time()-cpu,
         hashes={f:digest(folder/f) for f in ('models.jsonl','raw_generator.jsonl','output_transactions.jsonl')},
         checker_sha256=digest(__file__),formal_audit_sha256=digest(root/name/'audit'/job['instance']/f'seed-{job["seed"]}.json'))
-    write(folder/'state_audit.json',result);return result
+    target=folder/'state_audit.json'
+    if target.exists():shutil.copy2(target,target.with_name(target.name+'.previous-'+digest(target)[:12]))
+    write(target,result);return result
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('root',type=Path);p.add_argument('--jobs',type=int,default=12);a=p.parse_args()

@@ -12,6 +12,7 @@ def main():
     if data['budget_seconds']!=120:raise ValueError('This report is only for the formal 120s screen; refusing to label smoke data as performance')
     diag=Path(state['diagnosis']);replay=Path(state['replay']);fixed=json.loads((replay/'analysis.json').read_text())
     out=['# 第四轮实验报告','',f'状态：{state["status"]}。冻结起点 31cc227；A/B 生成源码固定为 269de45，既有二进制 SHA-256 a8d36788502fe3feb685f5acf8ffba555ef8d11c01b1f4dd9f04ea41421629de。仅比较 ab_reference 与 ab_polish；第三轮完整版只作原因诊断。','',
+         '主要结论、逐案例机制解释和截止尾行处置见 [结果解读](第四轮结果解读.md)。以下为可由保存结果重新生成的数值报告。','',
          '## 实现与隔离证据','',
          '完整冻结 A/B 源码以独立命名空间编译；原局部方向、目标求解、探索和控制逻辑保留。输出适配补丁可逐行检查 vendor/frozen_ab/output_adapter.patch。精修不反馈 current、seed_bank、内部覆盖、冲突缓存、探索阻塞或 RNG；调试模式逐调用比较这些状态及求解器表达式。关闭精修的受控操作前缀与冻结 A/B 的模型、类别和决策计数一致。',
          '', '精修只使用流式 safe，多步总预算 6 步/24 个候选/60ms，每步 4 个；没有 LineDomain 回退或新增调度器。独立随机种子只由运行种子、原始模型序号和固定标签派生。正式输出保留原模型所有尚未见过的 0/1 观察状态，缺少合格候选时回退；内部原始模型不计入正式样本数。',

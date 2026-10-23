@@ -1,0 +1,155 @@
+{
+  "budget_seconds": 120.0,
+  "configurations": [
+    {
+      "configuration": "ab_reference",
+      "runs": 9,
+      "mean_percent": 44.55525275257514,
+      "samples": 6138
+    },
+    {
+      "configuration": "ab_polish",
+      "runs": 9,
+      "mean_percent": 44.93149149770521,
+      "samples": 7035
+    }
+  ],
+  "paired": [
+    {
+      "metric": "prefix",
+      "budget": 2,
+      "paired": 9,
+      "mean_delta_pp": 0.5855752622411956,
+      "median_delta_pp": 0.03680940536078792,
+      "wins": 5,
+      "ties": 3,
+      "losses": 1
+    },
+    {
+      "metric": "prefix",
+      "budget": 5,
+      "paired": 9,
+      "mean_delta_pp": -3.771867709774939,
+      "median_delta_pp": -0.00191133325050874,
+      "wins": 3,
+      "ties": 1,
+      "losses": 5
+    },
+    {
+      "metric": "prefix",
+      "budget": 10,
+      "paired": 9,
+      "mean_delta_pp": -1.30387048343978,
+      "median_delta_pp": 0.4544649707844002,
+      "wins": 5,
+      "ties": 1,
+      "losses": 3
+    },
+    {
+      "metric": "prefix",
+      "budget": 50,
+      "paired": 7,
+      "mean_delta_pp": -1.0269306792459498,
+      "median_delta_pp": 0.3927789829795785,
+      "wins": 5,
+      "ties": 0,
+      "losses": 2
+    },
+    {
+      "metric": "prefix",
+      "budget": 100,
+      "paired": 6,
+      "mean_delta_pp": 0.44022004988049446,
+      "median_delta_pp": -0.52630382363943,
+      "wins": 2,
+      "ties": 0,
+      "losses": 4
+    },
+    {
+      "metric": "prefix",
+      "budget": 1000,
+      "paired": 3,
+      "mean_delta_pp": 0.0,
+      "median_delta_pp": 0.0,
+      "wins": 0,
+      "ties": 3,
+      "losses": 0
+    },
+    {
+      "metric": "time",
+      "budget": 5,
+      "paired": 9,
+      "mean_delta_pp": -3.4259367117756208,
+      "median_delta_pp": 0,
+      "wins": 3,
+      "ties": 3,
+      "losses": 3
+    },
+    {
+      "metric": "time",
+      "budget": 10,
+      "paired": 9,
+      "mean_delta_pp": -2.134772384075668,
+      "median_delta_pp": 0.0,
+      "wins": 4,
+      "ties": 3,
+      "losses": 2
+    },
+    {
+      "metric": "time",
+      "budget": 30,
+      "paired": 9,
+      "mean_delta_pp": 0.9206760538061459,
+      "median_delta_pp": 0.8853213716579091,
+      "wins": 5,
+      "ties": 0,
+      "losses": 4
+    },
+    {
+      "metric": "time",
+      "budget": 60,
+      "paired": 9,
+      "mean_delta_pp": 0.5860290069671082,
+      "median_delta_pp": 0.27905465457429734,
+      "wins": 7,
+      "ties": 1,
+      "losses": 1
+    },
+    {
+      "metric": "time",
+      "budget": 120,
+      "paired": 9,
+      "mean_delta_pp": 0.3762387451300619,
+      "median_delta_pp": 0.0,
+      "wins": 4,
+      "ties": 3,
+      "losses": 2
+    }
+  ],
+  "per_case_mean_delta": {
+    "20180326-Bromberger_v45_problem__003.smt2.slack.smt2": 0.0,
+    "SMT_random_LIA_ex14600_2600_100.smt2": -0.0015927777087565431,
+    "convert_convert-jpg2gif-query-1459.smt2": 1.1303090130989422
+  },
+  "checks": {
+    "endpoint_mean_nonnegative": true,
+    "endpoint_median_nonnegative": true,
+    "positive_on_two_development_cases": false,
+    "two_thirds_seed_pairs_nonnegative": true,
+    "formal_screen_protocol": true,
+    "mechanism_audits_passed": true,
+    "output_state_isolation_and_preservation": true,
+    "replacements_actually_accepted": true,
+    "observed_extra_cost_within_allowance": true,
+    "all_output_transactions_accounted": false,
+    "prefix_10_mean_nonnegative": false,
+    "prefix_50_mean_nonnegative": false
+  },
+  "promising": false,
+  "sampling_cpu_seconds": 2144.786568,
+  "sampling_wall_seconds": 240.1017803568393,
+  "formal_audit_cpu_seconds": 279.017049,
+  "formal_audit_wall_seconds": 32.13706582901068,
+  "state_audit_cpu_seconds": 74.767873615,
+  "state_audit_wall_seconds": 9.53382398490794
+}

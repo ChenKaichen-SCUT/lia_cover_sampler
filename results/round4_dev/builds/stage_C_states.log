@@ -1,0 +1,22 @@
+concurrent.futures.process._RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/concurrent/futures/process.py", line 246, in _process_worker
+    r = call_item.fn(*call_item.args, **call_item.kwargs)
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_ab_states.py", line 16, in one
+    assert not any(v for k,v in public_audit['counts'].items() if k!='valid')
+AssertionError
+"""
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_ab_states.py", line 68, in <module>
+    if __name__=='__main__':main()
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_ab_states.py", line 64, in main
+    for future in as_completed([pool.submit(one,j) for j in jobs]):rows.append(future.result())
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 451, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+AssertionError

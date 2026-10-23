@@ -1,0 +1,16 @@
+running_A_scoped_diagnosis
+running_B_fixed_raw_transform
+running_C_120s_screen
+auditing_C_formal_outputs
+auditing_C_raw_formal_isolation
+failed_preserved
+Traceback (most recent call last):
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/round4_workflow.py", line 53, in <module>
+    if __name__=='__main__':main()
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/round4_workflow.py", line 45, in main
+    run('stage_C_states',[ROOT/'scripts/audit_ab_states.py',screen,'--jobs','12'])
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/round4_workflow.py", line 30, in run
+    with (logs/(name+'.log')).open('w') as log:subprocess.run([python,*map(str,command)],stdout=log,stderr=subprocess.STDOUT,cwd=ROOT,check=True)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/tmp/lia-highdiv-frozen/venv/bin/python3', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_ab_states.py', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round4_screen/main', '--jobs', '12']' returned non-zero exit status 1.

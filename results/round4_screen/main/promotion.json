@@ -1,0 +1,38 @@
+{
+  "approved": false,
+  "checks": {
+    "endpoint_mean_nonnegative": true,
+    "endpoint_median_nonnegative": true,
+    "positive_on_two_development_cases": false,
+    "two_thirds_seed_pairs_nonnegative": true,
+    "formal_screen_protocol": true,
+    "mechanism_audits_passed": true,
+    "output_state_isolation_and_preservation": true,
+    "replacements_actually_accepted": true,
+    "observed_extra_cost_within_allowance": true,
+    "all_output_transactions_accounted": false,
+    "prefix_10_mean_nonnegative": false,
+    "prefix_50_mean_nonnegative": false
+  },
+  "automatic_long_runs": false,
+  "decision": "Stop: failed predeclared screen gates",
+  "analysis_sha256": "517db5c961d1c3e42aed62f6d1b46611836be3ad830398f4e8b6ca14ed807dde",
+  "configurations": {
+    "ab_reference": {
+      "binary": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/round4/final/ab_sampler",
+      "binary_sha256": "77394226140c55743eb27937548c2238e0f0dcaa783995a8bf7e620099157518",
+      "args": [
+        "--output-polish",
+        "false"
+      ]
+    },
+    "ab_polish": {
+      "binary": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/round4/final/ab_sampler",
+      "binary_sha256": "77394226140c55743eb27937548c2238e0f0dcaa783995a8bf7e620099157518",
+      "args": [
+        "--output-polish",
+        "true"
+      ]
+    }
+  }
+}

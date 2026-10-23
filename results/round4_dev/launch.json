@@ -1,0 +1,28 @@
+{
+  "pid": 56358,
+  "started_utc": "2026-10-23T16:04:34.963239+00:00",
+  "command": [
+    "/tmp/lia-highdiv-frozen/venv/bin/python3",
+    "scripts/round4_workflow.py",
+    "--configs",
+    "results/round4_dev/configs.json",
+    "--prefix-audit",
+    "results/round4_dev/prefix_audit_final/audit.json",
+    "--probe",
+    "build/round4/final/snapshot_probe",
+    "--replay-binary",
+    "build/round4/final/ab_replay"
+  ],
+  "source_commit": "9dab397a2079d876871f43b1ab7cd36b396c6c01",
+  "estimated_minutes": [
+    10,
+    20
+  ],
+  "stages": [
+    "324 snapshot diagnostic replays",
+    "9 frozen AB prefix transformations",
+    "18 x 120s paired screen, 12 workers",
+    "independent formal and raw-state audits, report"
+  ],
+  "user_monitoring_preference": "Detached execution; user will request progress; no continuous polling"
+}

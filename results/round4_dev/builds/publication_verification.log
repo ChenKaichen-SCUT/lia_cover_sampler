@@ -1,0 +1,33 @@
+{
+  "checked_utc": "2026-10-23T16:36:40.192977+00:00",
+  "sampling_source_and_binaries_unchanged": true,
+  "promotion_rules_unchanged": true,
+  "baseline_paths_verified": 104,
+  "batches": [
+    {
+      "configuration": "ab_reference",
+      "runs": 9,
+      "content_bindings_verified": true
+    },
+    {
+      "configuration": "ab_polish",
+      "runs": 9,
+      "content_bindings_verified": true
+    }
+  ],
+  "valid_formal_samples": 13173,
+  "raw_formal_runs_verified": 18,
+  "pending_raw_models": 1,
+  "incomplete_formal_lines": 1,
+  "diagnosis_runs": 324,
+  "fixed_prefix_runs": 9,
+  "decision": "not promoted",
+  "failed_checks": [
+    "positive_on_two_development_cases",
+    "all_output_transactions_accounted",
+    "prefix_10_mean_nonnegative",
+    "prefix_50_mean_nonnegative"
+  ],
+  "formal_audit_bindings": "Every report SHA and all input, metric, validator, solver and checker hashes verified",
+  "tail_policy": "Original deadline-truncated row preserved and excluded; incomplete transaction still fails the frozen gate"
+}

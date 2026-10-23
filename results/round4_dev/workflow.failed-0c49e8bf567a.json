@@ -1,0 +1,23 @@
+{
+  "pid": 56358,
+  "started_utc": "2026-10-23T16:04:35.064144+00:00",
+  "jobs": 12,
+  "source_commit": "9dab397a2079d876871f43b1ab7cd36b396c6c01",
+  "frozen_build": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round4_dev/builds/final.json",
+  "frozen_build_sha256": "d664b63a5707a5acf7dc175af562324cee991fc5f902d4a84d9e36d2fff791b7",
+  "workflow_sha256": "92916ef00b2c1e930b92f3788437f0c85c2430f174ca83217ea313dcc601900e",
+  "analysis_sha256": "246c5a911a29cb0c32bff6d73470e282e634d44b899e251d3b3cbc51a8fa7921",
+  "configs": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round4_dev/configs.json",
+  "configs_sha256": "9ae3c5dd4ec6a48a7da6861a5b2cfbc949e4b22f93b2179b7a948a81775dbd6b",
+  "pending_after_pipeline": [
+    "Review complete evidence, report and publish code/results"
+  ],
+  "status": "failed_preserved",
+  "checked_utc": "2026-10-23T16:10:03.720242+00:00",
+  "diagnosis": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round4_diagnostic/main",
+  "replay": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round4_replay/main",
+  "screen": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round4_screen/main",
+  "error": "Command '['/tmp/lia-highdiv-frozen/venv/bin/python3', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_ab_states.py', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round4_screen/main', '--jobs', '12']' returned non-zero exit status 1.",
+  "traceback": "Traceback (most recent call last):\n  File \"/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/round4_workflow.py\", line 45, in main\n    run('stage_C_states',[ROOT/'scripts/audit_ab_states.py',screen,'--jobs','12'])\n  File \"/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/round4_workflow.py\", line 30, in run\n    with (logs/(name+'.log')).open('w') as log:subprocess.run([python,*map(str,command)],stdout=log,stderr=subprocess.STDOUT,cwd=ROOT,check=True)\n  File \"/usr/lib/python3.10/subprocess.py\", line 526, in run\n    raise CalledProcessError(retcode, process.args,\nsubprocess.CalledProcessError: Command '['/tmp/lia-highdiv-frozen/venv/bin/python3', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_ab_states.py', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/round4_screen/main', '--jobs', '12']' returned non-zero exit status 1.\n",
+  "workflow_wall_seconds": 328.7252754960209
+}
