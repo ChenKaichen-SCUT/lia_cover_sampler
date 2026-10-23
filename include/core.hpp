@@ -199,10 +199,15 @@ class Global {
     bool use_cache = true;
     // Regression seam: production leaves this empty and always calls Z3.
     std::function<std::optional<GlobalResult>(unsigned)> exploration_check;
+    std::function<GlobalResult(const std::vector<Target> &, Budget &, Stats &)> repair_check;
     std::function<void(const std::string &)> trace;
     explicit Global(Formula &f, unsigned seed, unsigned resource_limit = 0);
     GlobalResult query(const std::vector<Target> &targets, Budget &budget, Stats &stats,
-                       unsigned allocation_ms = 0xffffffffU);
+                       unsigned allocation_ms = 0xffffffffU, bool adapt_pack = true);
+    GlobalResult repair(const std::vector<Target> &targets, Budget &budget, Stats &stats,
+        const std::function<Gain(const Assignment &)> &score,
+        const std::function<void(const GlobalResult &)> &feedback,
+        unsigned max_calls = 4, unsigned max_expansions = 2);
     GlobalResult explore(const Assignment &current, Budget &budget, Stats &stats,
                          unsigned allocation_ms = 0xffffffffU);
     size_t blocked_models() const { return blocked_model_keys.size(); }

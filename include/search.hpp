@@ -24,7 +24,7 @@ struct Direction {
     std::string source, scope, equation_signature;
 };
 std::vector<Direction> quota_directions(const DirectionSystem &system, const std::vector<Assignment> &history,
-    const Assignment &base, Budget &budget, std::mt19937_64 &rng, Stats &stats, unsigned cap);
+    const Assignment &base, Budget &budget, std::mt19937_64 &rng, Stats &stats, unsigned cap, bool quotas = true);
 struct TargetRecord {
     bool witnessed = false, globally_unreachable = false;
     unsigned timeouts = 0;

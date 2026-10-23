@@ -65,7 +65,8 @@ static SolveStatus classify_unknown(const std::string &reason, const Budget &bud
         reason.find("cancel") != std::string::npos)) return SolveStatus::Timeout;
     return SolveStatus::Unknown;
 }
-GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, Stats &stats, unsigned allocation_ms) {
+GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, Stats &stats, unsigned allocation_ms,
+                           bool adapt_pack) {
     const auto begin = Clock::now();
     if (budget.done() || !allocation_ms) {
         GlobalResult out;
@@ -82,12 +83,19 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
         int id = ensure(t);
         auto test = pack;
         test.insert(id);
-        if (use_cache && conflicts.blocked(test)) {
+        const auto cache_begin=Clock::now();
+        bool blocked=use_cache && conflicts.blocked(test);
+        stats.times["conflict_cache_check"]+=std::chrono::duration<double>(Clock::now()-cache_begin).count();
+        if (blocked) {
             ++stats.counts["cached_target_conflict"];
             continue;
         }
         pack = std::move(test);
     }
+    stats.counts["registered_activations"]=ids.size();
+    stats.counts["registered_target_definitions"]=ids.size();
+    stats.counts["registered_quotients"]=std::count_if(registered_targets.begin(),registered_targets.end(),
+        [&](const Target &t){return !f.nodes[t.node].boolean;});
     if (pack.empty() || budget.done())
         return {{}, "no_target", "", {}, SolveStatus::NoTarget};
     for (int id : pack)
@@ -106,7 +114,7 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
         out.status = "sat";
         out.code = SolveStatus::Sat;
         ++stats.counts["global_sat"];
-        if (pack_size < 8)
+        if (adapt_pack && pack_size < 8)
             ++pack_size;
     } else if (res == z3::unsat) {
         out.status = "unsat";
@@ -122,14 +130,15 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
         if (use_cache)
             conflicts.insert(core);
         ++stats.counts["target_combination_conflict"];
-        pack_size = std::max(1U, pack_size / 2);
+        ++stats.counts[core.size()==1 ? "target_singleton_proofs" : "target_multi_conflicts"];
+        if (adapt_pack) pack_size = std::max(1U, pack_size / 2);
     } else {
         out.detail = solver.reason_unknown();
         out.code = classify_unknown(out.detail, budget, ms,
                                     std::chrono::duration<double>(Clock::now() - begin).count(), resource_limit);
         out.status = status_name(out.code);
         ++stats.counts["target_" + out.status];
-        pack_size = std::max(1U, pack_size / 2);
+        if (adapt_pack) pack_size = std::max(1U, pack_size / 2);
     }
     out.actual_timeout_ms = ms;
     out.resource_limit = resource_limit;
@@ -165,6 +174,70 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
         trace(s.str() + "]}");
     }
     return out;
+}
+GlobalResult Global::repair(const std::vector<Target> &targets, Budget &budget, Stats &stats,
+    const std::function<Gain(const Assignment &)> &score,
+    const std::function<void(const GlobalResult &)> &feedback,
+    unsigned max_calls, unsigned max_expansions) {
+    const auto begin=Clock::now();
+    const unsigned previous_size=pack_size;
+    std::vector<Target> pack;
+    std::set<Target> tried;
+    for (auto target:targets) if (!unreachable(target) && tried.insert(target).second) {
+        pack.push_back(target);
+        if (pack.size()>=previous_size) break;
+    }
+    GlobalResult best, last;
+    Gain best_gain;
+    unsigned expansions=0, calls=0;
+    while (!pack.empty() && !budget.done() && calls++<max_calls) {
+        pack_size=pack.size();
+        last=repair_check ? repair_check(pack,budget,stats) : query(pack,budget,stats,0xffffffffU,false);
+        feedback(last);
+        ++stats.counts["repair_internal_calls"];
+        if (last.model) {
+            if (!f.validate(*last.model)) throw std::logic_error("repair witness violates original formula");
+            auto gain=score(*last.model);
+            if (!best.model || gain.covered>best_gain.covered ||
+                (gain.covered==best_gain.covered && gain.observed>best_gain.observed)) {
+                best=last; best_gain=gain;
+            }
+            if (expansions>=max_expansions || pack.size()>=8 || gain.covered==0) break;
+            bool extended=false;
+            // Targets arrive in the manager's value order; preserve a SAT core pack.
+            for (auto target:targets) if (!unreachable(target) && tried.insert(target).second) {
+                auto test=pack; test.push_back(target); std::set<int> ids_to_test;
+                for (auto t:test) ids_to_test.insert(ensure(t));
+                if (use_cache && conflicts.blocked(ids_to_test)) continue;
+                pack=std::move(test); extended=true; ++expansions; ++stats.counts["repair_expansions"]; break;
+            }
+            if (!extended) break;
+        } else if (last.code==SolveStatus::Unsat) {
+            // Delete only one lowest-ranked member of this actual core. A multi-core
+            // never marks its individual members unreachable.
+            auto remove=pack.end();
+            for (auto it=pack.begin();it!=pack.end();++it) {
+                auto id=ids.find(*it);
+                if (id!=ids.end() && std::find(last.core.begin(),last.core.end(),id->second)!=last.core.end())
+                    remove=it;
+            }
+            if (remove==pack.end()) break;
+            pack.erase(remove); ++stats.counts["repair_core_removals"];
+        } else {
+            // Unknown/Timeout/ResourceExhausted are scheduling evidence, never proofs.
+            ++stats.counts["repair_nonproof_stops"];
+            break;
+        }
+    }
+    double elapsed=std::chrono::duration<double>(Clock::now()-begin).count();
+    if (best.model && best_gain.covered>0 && elapsed<.2 && expansions)
+        pack_size=std::min(8U,previous_size+1);
+    else if (!best.model || best_gain.covered==0)
+        pack_size=std::max(1U,previous_size/2);
+    else pack_size=previous_size;
+    stats.counts["repair_returned_witness"]+=bool(best.model);
+    if (best.model && last.code!=SolveStatus::Sat) ++stats.counts["repair_preserved_earlier_witness"];
+    return best.model ? best : last;
 }
 void Global::validate_conflicts(const Assignment &model) {
     auto observations = f.evaluate(model);

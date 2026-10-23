@@ -27,7 +27,7 @@ std::string assignment_id(const Formula &f, const Assignment &model) {
     std::ostringstream out; out << std::hex << hash; return out.str();
 }
 std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vector<Assignment> &history,
-    const Assignment &base, Budget &budget, std::mt19937_64 &rng, Stats &stats, unsigned cap) {
+    const Assignment &base, Budget &budget, std::mt19937_64 &rng, Stats &stats, unsigned cap, bool quotas) {
     Timer timer(stats, "directions");
     std::array<std::vector<Assignment>, 4> groups;
     std::set<std::vector<Z>> seen;
@@ -135,6 +135,15 @@ std::vector<Direction> quota_directions(const DirectionSystem &s, const std::vec
     std::vector<Direction> result;
     std::array<size_t, 4> positions{};
     auto signature = s.signature();
+    if (!quotas) {
+        for (unsigned i=0;i<4 && result.size()<cap;++i)
+            for (const auto &delta:groups[i]) {
+                if (result.size()>=cap || budget.done()) break;
+                result.push_back({delta,sources[i],s.scope,signature});
+                ++stats.counts["direction_"+std::string(sources[i])+"_selected"];
+            }
+        return result;
+    }
     // Round-robin reserves capacity for each source and transfers unused quota.
     while (result.size() < cap && !budget.done()) {
         bool added = false;
@@ -371,7 +380,7 @@ CandidateBatch Search::line(const Assignment &seed, const Coverage &coverage, Bu
     DirectionSystem system;
     system.scope="structural_line"; system.width=seed.size(); system.equations=structural->rows;
     for (size_t i=0;i<seed.size();++i) if (f.nodes[f.variables[i]].boolean) system.booleans.insert(i);
-    auto dirs=quota_directions(system,history,seed,budget,rng,stats,options.direction_cap);
+    auto dirs=quota_directions(system,history,seed,budget,rng,stats,options.direction_cap,options.quotas);
     std::vector<std::unique_ptr<LineAnalyzer>> analyzers;
     std::vector<std::vector<Target>> goals;
     std::vector<LineDomain> domains;
@@ -473,13 +482,22 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
     const auto before_observation = f.evaluate(seed);
     result.before = result.after = committed.gain(before_observation);
     auto original_bits = new_coverage_bits(f, committed, before_observation);
+    const unsigned candidate_limit=options.candidate_cap;
+    const auto starting_scored=stats.counts["unique_candidates_scored"];
     // No accept() is possible here: the committed coverage is read-only.
     for (unsigned move = 0; move < options.polish_steps && !budget.done(); ++move) {
+        auto used=stats.counts["unique_candidates_scored"]-starting_scored;
+        if (used>=candidate_limit) break;
+        options.candidate_cap=candidate_limit-used;
         auto proposal = safe(result.model, committed, budget, rng, stats, {}, already_emitted);
+        options.candidate_cap=candidate_limit;
         std::string module="local_safe";
         if ((!proposal.model || !better(proposal.gain,result.after)) &&
-            options.line && line_supported && !budget.done()) {
+            options.line && line_supported && !budget.done() &&
+            stats.counts["unique_candidates_scored"]-starting_scored<candidate_limit) {
+            options.candidate_cap=candidate_limit-(stats.counts["unique_candidates_scored"]-starting_scored);
             proposal=line(result.model,committed,budget,rng,stats,{},already_emitted);
+            options.candidate_cap=candidate_limit;
             module="local_line";
         }
         if (!proposal.model || !better(proposal.gain, result.after)) break;

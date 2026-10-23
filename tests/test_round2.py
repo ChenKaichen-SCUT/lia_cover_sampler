@@ -23,7 +23,7 @@ class RoundTwoIntegration(unittest.TestCase):
                 f"(declare-const x{i} Int)(assert (and (<= -1 x{i}) (<= x{i} 0)))"
                 for i in range(5)))
             root = original_formula(formula)
-            for profile in ("schedule", "directions", "polish"):
+            for profile in ("schedule", "directions", "polish", "line", "full"):
                 output = base / profile
                 subprocess.run([str(BIN), "-i", str(formula), "-o", str(output),
                                 "-n", "8", "-t", "0.5", "--profile", profile],

@@ -74,6 +74,7 @@ Options parse(int argc, char **argv) {
     if (!a.new_generation) a.search.quotas = a.search.fair = a.search.matching = a.search.polish = false;
     if (a.profile == "directions") a.search.polish = false;
     a.search.line = a.profile == "line" || a.profile == "full";
+    a.search.repair = a.profile == "full";
     a.search.random = a.variant == "random";
     std::istringstream disabled(a.disable); std::string name;
     while (std::getline(disabled,name,',')) {
@@ -580,11 +581,16 @@ int main(int argc, char **argv) {
                     }
                 }
                 if (count < opt.n && !budget.done() && (selection ? selection->kind == ActionKind::TargetSolve : (!progress || !do_local))) {
-                    auto res = f->metric_compatible ? global->query(targets, work_budget, stats)
-                                                    : GlobalResult{{}, "metric_incompatible", "", {}};
+                    auto feedback=[&](const GlobalResult &res) {
+                        if (search) search->targets.feedback(res.attempted,res,
+                            res.model ? coverage.gain(f->evaluate(*res.model)).covered : 0,budget.elapsed());
+                    };
+                    auto res = !f->metric_compatible ? GlobalResult{{}, "metric_incompatible", "", {}} :
+                        opt.search.repair ? global->repair(targets,work_budget,stats,
+                            [&](const Assignment &m){return coverage.gain(f->evaluate(m));},feedback) :
+                        global->query(targets,work_budget,stats);
                     action_status = res.status;
-                    if (search) search->targets.feedback(res.attempted,res,res.model ? coverage.gain(f->evaluate(*res.model)).covered : 0,
-                                                         budget.elapsed());
+                    if (!opt.search.repair) feedback(res);
                     if (res.model) {
                         ++solver_candidates;
                         solver_unique += !emitted.count(f->key(*res.model));
