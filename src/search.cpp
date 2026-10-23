@@ -213,8 +213,11 @@ std::vector<Target> TargetManager::select(const Coverage &coverage, std::mt19937
     std::set<Target> seen;
     size_t n = f.nodes.size();
     for (size_t attempt = 0; attempt < cap * 12 && !budget.done(); ++attempt) {
-        size_t position = cursor++;
-        int node = attempt % 4 == 0 ? position % n : rng() % n;
+        const bool rotating=attempt%4==0;
+        size_t position=cursor;
+        if (rotating || !rotation_fix) ++cursor;
+        int node=rotating ? position%n : rng()%n;
+        if (rotating && on_rotation_scan) on_rotation_scan(node);
         const auto &description = f.nodes[node];
         if (description.expr.is_numeral() || description.expr.is_true() || description.expr.is_false()) continue;
         unsigned bit_index = description.boolean ? 0 :
@@ -285,6 +288,7 @@ CandidateBatch Search::safe_eager(const Assignment &seed, const Coverage &covera
     std::mt19937_64 &rng, Stats &stats, const std::vector<Assignment> &history,
     const std::function<bool(const std::string &)> &already_emitted, CandidateLimits limits) {
     CandidateBatch result;
+    const auto begin=Clock::now();
     auto observation = f.evaluate(seed);
     Region region(f, seed, observation, budget);
     if (!region.supported) { result.status = "unsupported"; return result; }
@@ -365,6 +369,9 @@ CandidateBatch Search::safe_eager(const Assignment &seed, const Coverage &covera
         ++result.scored; ++stats.counts["unique_candidates_scored"];
         auto observed = f.evaluate(candidate);
         auto gain = coverage.gain(observed);
+        double elapsed=std::chrono::duration<double>(Clock::now()-begin).count();
+        if(result.first_valid_seconds<0) result.first_valid_seconds=elapsed;
+        if(gain.covered && result.first_positive_seconds<0) result.first_positive_seconds=elapsed;
         if (!observed.visited[target.node]) ++stats.counts["numeric_hit_unobserved"];
         if (!result.model || better(gain, result.gain)) {
             result.model = candidate; result.gain = gain; result.direction_source = dirs[i].source;
@@ -386,6 +393,7 @@ CandidateBatch Search::line_eager(const Assignment &seed, const Coverage &covera
     std::mt19937_64 &rng, Stats &stats, const std::vector<Assignment> &history,
     const std::function<bool(const std::string &)> &already_emitted, CandidateLimits limits) {
     CandidateBatch result;
+    const auto begin=Clock::now();
     Timer timer(stats,"line_analysis");
     if (!syntax) syntax=std::make_unique<AffineSyntax>(f,options.line_limits);
     if (!structural || !structural->complete) structural=structural_equalities(f,*syntax,budget);
@@ -461,6 +469,9 @@ CandidateBatch Search::line_eager(const Assignment &seed, const Coverage &covera
         ++result.scored; ++stats.counts["unique_candidates_scored"];
         if (safe_region.supported && !safe_region.contains(candidate)) ++stats.counts["line_cross_branch_candidates"];
         auto gain=coverage.gain(observed);
+        double elapsed=std::chrono::duration<double>(Clock::now()-begin).count();
+        if(result.first_valid_seconds<0) result.first_valid_seconds=elapsed;
+        if(gain.covered && result.first_positive_seconds<0) result.first_positive_seconds=elapsed;
         if (!result.model || better(gain,result.gain)) {
             result.model=candidate; result.gain=gain; result.direction_source=dirs[i].source;
         }
@@ -497,30 +508,53 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
     auto original_bits = new_coverage_bits(f, committed, before_observation);
     const unsigned candidate_limit=options.candidate_cap;
     const auto starting_scored=stats.counts["unique_candidates_scored"];
-    // No accept() is possible here: the committed coverage is read-only.
-    for (unsigned move = 0; move < options.polish_steps && !budget.done(); ++move) {
+    unsigned flat=0;
+    // Every helper receives explicit limits; options never change during refinement.
+    for (unsigned move=0;move<options.polish_steps && !budget.done();++move) {
         auto used=stats.counts["unique_candidates_scored"]-starting_scored;
-        if (used>=candidate_limit) break;
-        options.candidate_cap=candidate_limit-used;
-        auto proposal = safe(result.model, committed, budget, rng, stats, {}, already_emitted);
-        options.candidate_cap=candidate_limit;
+        if(used>=candidate_limit) break;
+        unsigned remaining=candidate_limit-used;
+        unsigned step_candidates=options.polish_split ? std::min(remaining,options.polish_step_candidates) : remaining;
+        Budget step;step.parent=&budget;
+        unsigned steps_left=std::min(options.polish_steps-move,
+            (remaining+options.polish_step_candidates-1)/options.polish_step_candidates);
+        step.seconds=options.polish_split ? budget.left()/std::max(1U,steps_left) : budget.left();
+        Budget safe_budget;safe_budget.parent=&step;
+        safe_budget.seconds=step.left()*(options.polish_split && options.line ? .65 : 1.0);
+        ++result.attempted_steps;++stats.counts["polish_attempted_steps"];
+        const auto before_step=stats.counts["unique_candidates_scored"];
+        CandidateLimits limit;limit.candidates=step_candidates;
+        auto proposal=safe(result.model,committed,safe_budget,rng,stats,{},already_emitted,limit);
         std::string module="local_safe";
-        if ((!proposal.model || !better(proposal.gain,result.after)) &&
-            options.line && line_supported && !budget.done() &&
-            stats.counts["unique_candidates_scored"]-starting_scored<candidate_limit) {
-            options.candidate_cap=candidate_limit-(stats.counts["unique_candidates_scored"]-starting_scored);
-            proposal=line(result.model,committed,budget,rng,stats,{},already_emitted);
-            options.candidate_cap=candidate_limit;
-            module="local_line";
+        auto step_used=stats.counts["unique_candidates_scored"]-before_step;
+        if((!proposal.model || !better(proposal.gain,result.after)) && options.line && line_supported &&
+           !step.done() && step_used<step_candidates) {
+            limit.candidates=step_candidates-step_used;
+            auto alternate=line(result.model,committed,step,rng,stats,{},already_emitted,limit);
+            if(alternate.model && (!proposal.model || better(alternate.gain,proposal.gain))) {
+                proposal=std::move(alternate);module="local_line";
+            }
         }
-        if (!proposal.model || !better(proposal.gain, result.after)) break;
-        result.model = *proposal.model;
-        result.after = proposal.gain;
-        ++result.moves;
-        if (std::find(result.modules.begin(),result.modules.end(),module)==result.modules.end())
+        auto scored=stats.counts["unique_candidates_scored"]-before_step;
+        result.candidates_per_step.push_back(scored);
+        ++stats.counts["polish_candidates_per_step_"+std::to_string(scored)];
+        if(!proposal.model || !better(proposal.gain,result.after)) {
+            if(!options.polish_split || ++flat>=options.polish_flat_steps) break;
+            continue;
+        }
+        flat=0;result.model=*proposal.model;result.after=proposal.gain;
+        ++result.moves;++stats.counts["polish_accepted_steps"];
+        if(std::find(result.modules.begin(),result.modules.end(),module)==result.modules.end())
             result.modules.push_back(module);
-        // safe() rebuilt Region, branch conditions, intercepts and intervals from this model.
+        // The next call rebuilds all model-dependent region and Reach state.
     }
+    stats.counts["polish_stopped_by_time"]+=budget.done();
+    stats.counts["polish_stopped_by_candidate_budget"]+=
+        stats.counts["unique_candidates_scored"]-starting_scored>=candidate_limit;
+    stats.counts["polish_improved_models"]+=result.after.covered>result.before.covered;
+    stats.counts["polish_gain_before"]+=result.before.covered;
+    stats.counts["polish_gain_after"]+=result.after.covered;
+    ++stats.counts["polish_accepted_steps_hist_"+std::to_string(result.moves)];
     auto final_bits = new_coverage_bits(f, committed, f.evaluate(result.model));
     for (size_t i = 0; i < final_bits.size(); ++i) {
         result.retained += std::popcount(original_bits[i] & final_bits[i]);
@@ -533,6 +567,7 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
     stats.counts["polish_added_bits"] += result.added;
     stats.counts["polish_lost_bits"] += result.lost;
     stats.refinement_seconds += result.seconds;
+    stats.times["polish_elapsed_seconds"]+=result.seconds;
     return result;
 }
 } // namespace lia

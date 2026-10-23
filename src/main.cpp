@@ -48,6 +48,8 @@ Options parse(int argc, char **argv) {
         else if (k == "--direction-cap") a.search.direction_cap = std::stoul(v);
         else if (k == "--candidate-cap") a.search.candidate_cap = std::stoul(v);
         else if (k == "--attempt-cap") a.search.attempt_cap = std::stoul(v);
+        else if (k == "--polish-step-candidates") a.search.polish_step_candidates = std::stoul(v);
+        else if (k == "--polish-flat-steps") a.search.polish_flat_steps = std::stoul(v);
         else if (k == "--polish-steps") a.search.polish_steps = std::stoul(v);
         else if (k == "--polish-ms") a.search.polish_seconds = std::stod(v) / 1000;
         else if (k == "--scheduler") {
@@ -89,11 +91,15 @@ Options parse(int argc, char **argv) {
         else if (name == "work_conserving") a.work_conserving = false;
         else if (name == "streaming") a.search.streaming = false;
         else if (name == "directional_targets") a.search.directional_targets = false;
+        else if (name == "polish_split") a.search.polish_split = false;
+        else if (name == "rotation_fix") a.search.rotation_fix = false;
         else if (!name.empty()) throw std::invalid_argument("unknown disabled feature " + name);
     }
     if (a.variant == "global-only") a.search.polish = a.search.line = false;
     if (!a.search.direction_cap || a.search.direction_cap > 256 || !a.search.candidate_cap ||
         a.search.candidate_cap > 4096 || !a.search.attempt_cap || a.search.attempt_cap > 16384 ||
+        !a.search.polish_step_candidates || a.search.polish_step_candidates>4096 ||
+        !a.search.polish_flat_steps || a.search.polish_flat_steps>128 ||
         a.search.polish_steps > 128 || !std::isfinite(a.search.polish_seconds) ||
         a.search.polish_seconds < 0 || a.search.polish_seconds > 5)
         throw std::invalid_argument("search budget outside supported bounds");
@@ -157,6 +163,9 @@ int main(int argc, char **argv) {
             << ",\"line\":" << opt.search.line << ",\"repair\":" << opt.search.repair
             << ",\"direction_cap\":" << opt.search.direction_cap << ",\"candidate_cap\":" << opt.search.candidate_cap
             << ",\"attempt_cap\":" << opt.search.attempt_cap << ",\"polish_steps\":" << opt.search.polish_steps
+            << ",\"polish_split\":" << opt.search.polish_split << ",\"rotation_fix\":" << opt.search.rotation_fix
+            << ",\"polish_step_candidates\":" << opt.search.polish_step_candidates
+            << ",\"polish_flat_steps\":" << opt.search.polish_flat_steps
             << ",\"polish_seconds\":" << opt.search.polish_seconds
             << ",\"line_interval_limit\":" << opt.search.line_limits.intervals
             << ",\"line_dag_limit\":" << opt.search.line_limits.dag_nodes
@@ -355,6 +364,7 @@ int main(int argc, char **argv) {
                 Timer setup(stats, "target_manager_setup");
                 search = std::make_unique<Search>(*f);
                 search->options = opt.search;
+                search->targets.rotation_fix = opt.search.rotation_fix;
                 search->targets.globally_unreachable = [&](Target target) { return global->unreachable(target); };
             }
             if (trace.is_open())

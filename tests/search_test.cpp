@@ -123,6 +123,27 @@ int main() {
                 check(search.line_supported,"deadline never permanently disables line analysis");
             }
         }
+        {
+            std::string input;
+            for(unsigned i=0;i<12;++i) input+="(declare-const x"+std::to_string(i)+" Int)(assert (and (<= -1 x"+
+                std::to_string(i)+")(<= x"+std::to_string(i)+" 0)))";
+            Formula f(fixture(input));Assignment seed(12);Coverage coverage(f);coverage.accept(f.evaluate(seed));
+            Search search(f);search.options.polish_steps=24;search.options.polish_flat_steps=24;
+            search.options.polish_step_candidates=2;search.options.direction_cap=1;
+            Budget budget;budget.seconds=4;std::mt19937_64 rng(21);Stats stats;
+            auto result=search.polish_candidate(seed,coverage,budget,rng,stats,[](const auto&){return false;});
+            check(result.moves>=3,"deterministic bounded coordinate refinement performs multiple accepted steps");
+            for(auto count:result.candidates_per_step) check(count<=2,"per-step candidate budget respected");
+            check(search.options.candidate_cap==24,"shared options unchanged");
+            Search throwing(f);Budget other;other.seconds=4;bool thrown=false;
+            try {throwing.polish_candidate(seed,coverage,other,rng,stats,[](const auto&)->bool {
+                throw std::runtime_error("injected predicate failure");});} catch(const std::runtime_error &) {thrown=true;}
+            check(thrown && throwing.options.candidate_cap==24,"exception path cannot mutate shared candidate quota");
+            TargetManager targets(f);std::set<size_t> scanned;
+            targets.on_rotation_scan=[&](size_t node){scanned.insert(node);};
+            for(unsigned i=0;i<4;++i) targets.select(coverage,rng,f.nodes.size(),budget);
+            check(scanned.size()==f.nodes.size(),"deterministic scan visits all residue classes");
+        }
         std::cout << "search tests passed\n";
         return 0;
     } catch (const std::exception &error) {

@@ -7,9 +7,10 @@ namespace lia {
 struct SearchOptions {
     bool quotas = true, fair = true, matching = true, polish = true;
     bool line = false, repair = false, random = false;
-    bool streaming = true, directional_targets = true;
+    bool streaming = true, directional_targets = true, polish_split = true, rotation_fix = true;
     unsigned direction_cap = 20, candidate_cap = 24, attempt_cap = 256, polish_steps = 6;
     double polish_seconds = .06;
+    unsigned polish_step_candidates = 4, polish_flat_steps = 2;
     LineLimits line_limits;
 };
 struct DirectionSystem {
@@ -52,6 +53,8 @@ class TargetManager {
         const std::function<std::optional<Z>(int)> &alpha);
     void feedback(const std::vector<Target> &targets, const GlobalResult &result,
                   uint64_t gain, double now);
+    bool rotation_fix = true;
+    std::function<void(size_t)> on_rotation_scan;
     size_t rotation_cursor() const { return cursor; }
 };
 struct CandidateLimits {
@@ -70,6 +73,8 @@ struct PolishResult {
     Gain before, after;
     uint64_t retained = 0, added = 0, lost = 0, moves = 0;
     double seconds = 0;
+    unsigned attempted_steps = 0;
+    std::vector<unsigned> candidates_per_step;
     std::vector<std::string> modules;
 };
 std::vector<uint64_t> new_coverage_bits(const Formula &f, const Coverage &coverage, const Observation &model);

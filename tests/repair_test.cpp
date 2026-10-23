@@ -46,9 +46,14 @@ int main() {
                        [](const GlobalResult &){},1,2);
         check(limited==1,"query cap shared by whole repair action");
         Budget expired; expired.seconds=0;
-        bounded.repair(targets,expired,stats,[](const Assignment &){return Gain{};},
+        auto exhausted=bounded.repair(targets,expired,stats,[](const Assignment &){return Gain{};},
                        [](const GlobalResult &){});
         check(limited==1,"expired shared action never starts a new query");
+        check(exhausted.code==SolveStatus::BudgetExhausted && exhausted.status=="budget_exhausted",
+              "expired repair has an explicit non-solver status");
+        auto empty=bounded.repair({},b,stats,[](const Assignment &){return Gain{};},[](const GlobalResult &){});
+        check(empty.code==SolveStatus::NoTarget && empty.status=="no_target" && limited==1,
+              "empty pack does not invent a solver query or an empty status");
         std::cout<<"repair tests passed\n"; return 0;
     } catch(const std::exception &e) {std::cerr<<e.what()<<'\n';return 1;}
 }

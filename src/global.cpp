@@ -191,6 +191,9 @@ GlobalResult Global::repair(const std::vector<Target> &targets, Budget &budget, 
         if (pack.size()>=previous_size) break;
     }
     GlobalResult best, last;
+    last.code=interrupted ? SolveStatus::Cancelled : budget.done() ? SolveStatus::BudgetExhausted : SolveStatus::NoTarget;
+    last.status=status_name(last.code);
+    last.detail="no repair query issued";
     Gain best_gain;
     unsigned expansions=0, calls=0;
     while (!pack.empty() && !budget.done() && calls++<max_calls) {
