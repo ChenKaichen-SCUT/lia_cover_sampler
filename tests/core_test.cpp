@@ -144,7 +144,7 @@ int main() {
             check(r.status == "unknown" || r.status == "resource_exhausted" || r.status == "cancelled",
                   ("resource exhaustion is not UNSAT: " + r.status + " " + r.detail).c_str());
             check(global.conflicts.cores.empty(), "unknown does not create conflicts");
-            check(global.timeout_ms > 50, "unknown increases retry budget");
+            check(global.target_budget.requested_timeout_ms == 50, "resource exhaustion does not increase timeout");
         }
         {
             Formula f(fixture("(declare-const x Int)(assert (= (mod x 3) 0))"));
@@ -174,6 +174,41 @@ int main() {
                     proof.add(r.expression() && !f.root);
                     check(proof.check() == z3::unsat, "branch-dependent regions imply F");
                 }
+        }
+        {
+            Formula f(fixture("(declare-const x Int)(assert (>= x 0))(assert (<= x 3))"));
+            Global global(f, 0);
+            Stats stats; Budget budget;
+            std::vector<unsigned> calls;
+            global.exploration_check = [&](unsigned ms) -> std::optional<GlobalResult> {
+                calls.push_back(ms);
+                GlobalResult r;
+                r.code = ms < 200 ? SolveStatus::Timeout : SolveStatus::Sat;
+                if (ms >= 200) r.model = Assignment{1};
+                return r;
+            };
+            for (int i=0;i<3;++i) {
+                auto target = global.query({Target{f.variables[0],63,true}}, budget, stats);
+                check(!target.model, "impossible target stays impossible");
+                auto result = global.explore(Assignment{0}, budget, stats);
+                check(bool(result.model) == (i==2), "independent retry reaches SAT");
+            }
+            check(calls == std::vector<unsigned>({50,100,200}), "exploration actually gets growing allocations");
+            check(global.target_budget.requested_timeout_ms == 50, "target budget independent");
+            check(global.blocked_models() == 2 && stats.counts["exploration_block_added"] == 2,
+                  "retries do not duplicate blocks; new exploration model is blocked");
+            auto clipped = global.explore(Assignment{0}, budget, stats, 25);
+            check(clipped.actual_timeout_ms == 25, "allocation bounds requested timeout");
+            ProgressFeedback progress;
+            Coverage cov(f); cov.accept(f.evaluate(Assignment{0}));
+            auto gain = cov.gain(f.evaluate(Assignment{1}));
+            check(gain.covered>0, "exploration gain fixture");
+            progress.add({true,gain.covered,gain.observed});
+            progress.add({});
+            check(progress.next_stalled(8)==0, "later failed action cannot erase coverage progress");
+            ProgressFeedback duplicate;
+            duplicate.add({});
+            check(duplicate.next_stalled(8)==9, "no invented duplicate progress");
         }
         std::cout << "core tests passed\n";
         return 0;

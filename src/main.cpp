@@ -140,13 +140,14 @@ int main(int argc, char **argv) {
             fs::rename(temporary, fs::path(opt.output) / "progress.json");
             last_checkpoint = budget.elapsed();
         };
-        auto accept = [&](const Assignment &m, const std::string &category) -> bool {
-            if (count >= opt.n)
-                return false;
+        ProgressFeedback round_feedback;
+        auto accept = [&](const Assignment &m, const std::string &category) -> AcceptResult {
+            if (count >= opt.n || budget.done())
+                return {};
             auto key = f->key(m);
             if (emitted.count(key)) {
                 ++stats.counts["duplicate_output_assignment"];
-                return false;
+                return {};
             }
             {
                 Timer t(stats, "validation");
@@ -163,6 +164,7 @@ int main(int argc, char **argv) {
                 o = f->evaluate(m);
             }
             auto g = coverage.gain(o);
+            if (budget.done()) return {};
             Timer t(stats, "write");
             double time = budget.elapsed();
             std::ostringstream line;
@@ -197,7 +199,9 @@ int main(int argc, char **argv) {
             seed_bank.push_back(m);
             ++count;
             ++stats.counts["output_" + category];
-            return true;
+            AcceptResult result{true, g.covered, g.observed};
+            round_feedback.add(result);
+            return result;
         };
         std::string status = "sample_limit";
         z3::solver initial(f->ctx);
@@ -240,6 +244,7 @@ int main(int argc, char **argv) {
             double recent_local_gain = 0, recent_local_cost = 0;
             while (count < opt.n && !budget.done()) {
                 ++round;
+                round_feedback = {};
                 std::vector<Target> targets;
                 {
                     Timer target_timer(stats, "active_targets");
@@ -409,7 +414,7 @@ int main(int argc, char **argv) {
                                 accept(current, best_gain.covered    ? "local_gain"
                                                 : best_gain.observed ? "local_observation"
                                                                      : "local_fill");
-                                progress = best_gain.covered > 0;
+                                progress = round_feedback.coverage > 0;
                             } else {
                                 if (seed_bank.size() == 16)
                                     seed_bank.erase(seed_bank.begin());
@@ -441,10 +446,11 @@ int main(int argc, char **argv) {
                         auto g = coverage.gain(o);
                         current = *res.model;
                         if (g.covered || g.observed || stalled >= 2) {
-                            bool added = accept(current, g.covered    ? "global_gain"
+                            auto added = accept(current, g.covered    ? "global_gain"
                                                          : g.observed ? "global_observation"
                                                                       : "global_fill");
-                            progress = added && g.covered > 0;
+                            (void)added;
+                            progress = round_feedback.coverage > 0;
                         } else {
                             if (seed_bank.size() == 16)
                                 seed_bank.erase(seed_bank.begin());
@@ -463,7 +469,9 @@ int main(int argc, char **argv) {
                             current = seed_bank[rng() % seed_bank.size()];
                     }
                 }
-                stalled = progress ? 0 : stalled + 1;
+                progress = round_feedback.coverage > 0;
+                if (progress) ++stats.counts["coverage_progress_rounds"];
+                stalled = round_feedback.next_stalled(stalled);
                 checkpoint();
             }
             if (status == "running")

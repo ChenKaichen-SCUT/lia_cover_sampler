@@ -56,6 +56,28 @@ struct State {
 struct Gain {
     unsigned long covered = 0, observed = 0;
 };
+struct AcceptResult {
+    bool emitted = false;
+    uint64_t new_coverage = 0, new_observations = 0;
+};
+struct ProgressFeedback {
+    uint64_t coverage = 0, observations = 0;
+    void add(const AcceptResult &r) {
+        if (r.emitted) {
+            coverage += r.new_coverage;
+            observations += r.new_observations;
+        }
+    }
+    unsigned next_stalled(unsigned previous) const { return coverage ? 0 : previous + 1; }
+};
+enum class SolveStatus { Sat, Unsat, Timeout, Cancelled, ResourceExhausted, Unknown, NoTarget, BudgetExhausted };
+std::string status_name(SolveStatus status);
+struct SolveBudgetState {
+    unsigned requested_timeout_ms = 50, max_timeout_ms = 2000;
+    unsigned consecutive_timeouts = 0, consecutive_unknowns = 0, consecutive_fast_successes = 0;
+    double cumulative_seconds = 0, cooldown_until = 0;
+    void observe(SolveStatus status, double elapsed, double now, unsigned actual_ms);
+};
 class Formula {
   public:
     // Every AST-owning member must be destroyed BEFORE its Z3 context.
@@ -142,6 +164,9 @@ struct GlobalResult {
     std::optional<Assignment> model;
     std::string status, detail;
     std::vector<int> core;
+    SolveStatus code = SolveStatus::Unknown;
+    unsigned actual_timeout_ms = 0, resource_limit = 0;
+    double elapsed_seconds = 0;
 };
 class Global {
     Formula &f;
@@ -153,15 +178,25 @@ class Global {
     std::vector<Target> registered_targets;
     std::string last_assumptions;
     int ensure(Target t);
+    unsigned seed, resource_limit;
+    std::set<std::string> blocked_model_keys;
+    void block_model(const Assignment &model, Stats &stats);
 
   public:
     ConflictCache conflicts;
-    unsigned timeout_ms = 50, pack_size = 4;
+    SolveBudgetState target_budget, exploration_budget;
+    unsigned pack_size = 4;
     bool use_cache = true;
+    // Regression seam: production leaves this empty and always calls Z3.
+    std::function<std::optional<GlobalResult>(unsigned)> exploration_check;
     std::function<void(const std::string &)> trace;
     explicit Global(Formula &f, unsigned seed, unsigned resource_limit = 0);
-    GlobalResult query(const std::vector<Target> &targets, Budget &budget, Stats &stats);
-    GlobalResult explore(const Assignment &current, Budget &budget, Stats &stats);
+    GlobalResult query(const std::vector<Target> &targets, Budget &budget, Stats &stats,
+                       unsigned allocation_ms = 0xffffffffU);
+    GlobalResult explore(const Assignment &current, Budget &budget, Stats &stats,
+                         unsigned allocation_ms = 0xffffffffU);
+    size_t blocked_models() const { return blocked_model_keys.size(); }
+    void rebuild_exploration(Stats &stats);
     void validate_conflicts(const Assignment &model);
     std::string query_smt2() {
         return solver.to_smt2() + "\n(check-sat-assuming (" + last_assumptions + "))\n";
