@@ -525,11 +525,11 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
         if(used>=candidate_limit) break;
         unsigned remaining=candidate_limit-used;
         unsigned step_candidates=options.polish_split ? std::min(remaining,options.polish_step_candidates) : remaining;
-        Budget step;step.parent=&budget;
+        Budget step;step.parent=&budget;step.label="polish_step";
         unsigned steps_left=std::min(options.polish_steps-move,
             (remaining+options.polish_step_candidates-1)/options.polish_step_candidates);
         step.seconds=options.polish_split ? budget.left()/std::max(1U,steps_left) : budget.left();
-        Budget safe_budget;safe_budget.parent=&step;
+        Budget safe_budget;safe_budget.parent=&step;safe_budget.label="action";
         safe_budget.seconds=step.left()*(options.polish_split && options.line ? .65 : 1.0);
         ++result.attempted_steps;++stats.counts["polish_attempted_steps"];
         const auto before_step=stats.counts["unique_candidates_scored"];
@@ -559,6 +559,7 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
         result.candidates_per_step.push_back(scored);
         ++stats.counts["polish_candidates_per_step_"+std::to_string(scored)];
         if(!proposal.model || !better(proposal.gain,result.after)) {
+            ++stats.counts[proposal.model?"diag_polish_batch_CANDIDATE_CANNOT_IMPROVE":"diag_polish_batch_NO_NEW_CANDIDATE_FOUND"];
             if(!options.polish_split || ++flat>=options.polish_flat_steps) break;
             continue;
         }

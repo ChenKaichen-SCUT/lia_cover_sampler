@@ -72,6 +72,7 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
     std::mt19937_64 &rng,Stats &stats,const std::vector<Assignment> &history,
     const std::function<bool(const std::string &)> &emitted,CandidateLimits limits) {
     CandidateBatch result; const auto begin=Clock::now();
+    DiagnosticUnit batch(stats,diagnostic_trace,options.diagnostics,line_mode?"line":"safe","batch",line_mode?"structural_line":"safe_region");
     Timer action_path(stats,line_mode ? "line_analysis" : "safe_generation");
     const std::string prefix=line_mode ? "line_" : "safe_";
     const unsigned dc=std::min(options.direction_cap,limits.directions);
@@ -89,7 +90,11 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         for(size_t i=0;i<seed.size();++i) if(f.nodes[f.variables[i]].boolean) system.booleans.insert(i);
     } else {
         region=std::make_unique<Region>(f,seed,observation,budget);
-        if (!region->supported) {result.status="unsupported";return result;}
+        if (!region->supported) {
+            result.status="unsupported";
+            batch.event("batch",budget.done()?"DIRECTION_GENERATION_INCOMPLETE":"FEASIBILITY_UNSUPPORTED","region",
+                budget.elapsed(),diagnostic_budget(budget,false,false,false));return result;
+        }
         system.equations=region->eq;
         for (auto [i,v]:region->boolean) {(void)v;system.booleans.insert(i);}
     }
@@ -102,11 +107,12 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         size_t next=0;
         unsigned candidates=0;
         bool exact=false;
+        std::unique_ptr<DiagnosticUnit> diagnostic;
     };
     std::vector<std::unique_ptr<State>> directions;
     std::set<std::string> scored{f.key(seed)};
     auto arm=[&](State &state) {
-        state.slice.start=Clock::now();state.slice.parent=&budget;
+        state.slice.start=Clock::now();state.slice.parent=&budget;state.slice.label="direction";
         state.slice.seconds=std::min(budget.left(),std::max(.001,budget.seconds/std::max(1U,std::min(dc,4U))));
     };
     auto attempt=[&](size_t i) {
@@ -114,6 +120,14 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         if (full() || state.next>=state.goals.size()) return;
         arm(state);Timer per_source(stats,prefix+"direction_"+state.direction.source+"_seconds");
         auto target=state.goals[state.next++];
+        const auto target_start=Clock::now();
+        bool witness=false,constructed=false,validated=false;
+        std::string detail=",\"target_node\":"+std::to_string(target.node)+",\"target_bit\":"+
+            std::to_string(target.bit)+",\"target_desired\":"+(target.desired?"true":"false");
+        auto outcome=[&](const std::string &code,const std::string &stage,const std::string &extra="") {
+            state.diagnostic->event("target",code,stage,std::chrono::duration<double>(Clock::now()-target_start).count(),
+                detail+extra+diagnostic_budget(state.slice,witness,constructed,validated),true);
+        };
         ++result.attempts;++result.direction_attempts[i];++stats.counts["candidate_attempts"];
         ++stats.counts["direction_"+state.direction.source+"_attempts"];
         std::optional<Z> z;
@@ -122,7 +136,13 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
                 auto domain=f.nodes[target.node].boolean ? state.analyzer->boolean_target(target) :
                                                          state.analyzer->observable(target.node);
                 if (domain.status!=LineStatus::Exact) {
-                    ++stats.counts["line_target_"+line_status_name(domain.status)];return;
+                    ++stats.counts["line_target_"+line_status_name(domain.status)];
+                    outcome(domain.status==LineStatus::BudgetExceeded?"TARGET_ANALYSIS_BUDGET_EXCEEDED":"TARGET_UNSUPPORTED","observation");return;
+                }
+                if(domain.domain.without(0).intervals.empty()) {
+                    bool reach_empty=!f.nodes[target.node].boolean || state.analyzer->last_observable_empty;
+                    outcome(reach_empty?"REACH_EMPTY":"BIT_VALUE_UNREACHABLE","observation",
+                        ",\"proof_scope\":\"current_nonzero_line\"");return;
                 }
                 if(f.nodes[target.node].boolean) z=line_bit_witness(domain.domain,0,0,0,false,rng);
                 else {
@@ -131,21 +151,46 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
                     z=line_bit_witness(domain.domain,alpha,beta,target.bit,target.desired,rng,options.random);
                 }
             } else {
-                if (f.nodes[target.node].boolean) return;
+                if (f.nodes[target.node].boolean) {outcome("TARGET_UNSUPPORTED","target_value");return;}
                 auto affine=region->linear(target.node,false);
                 Z alpha=affine.dot(state.direction.delta),beta=affine.at(seed);
                 LineDomain domain(state.ranges);
                 z=line_bit_witness(domain,alpha,beta,target.bit,target.desired,rng,options.random);
             }
-        } catch(const LineFailure &error) {++stats.counts[prefix+"target_"+line_status_name(error.status)];return;}
-          catch(const std::domain_error &) {++stats.counts[prefix+"target_unsupported"];return;}
-        if(!z || state.slice.done()) return;
+        } catch(const LineFailure &error) {
+            ++stats.counts[prefix+"target_"+line_status_name(error.status)];
+            outcome(error.status==LineStatus::BudgetExceeded?"TARGET_ANALYSIS_BUDGET_EXCEEDED":"TARGET_UNSUPPORTED","target_value");return;
+        } catch(const std::domain_error &) {
+            ++stats.counts[prefix+"target_unsupported"];
+            outcome(state.slice.done()?"TARGET_ANALYSIS_BUDGET_EXCEEDED":"TARGET_UNSUPPORTED","target_value");return;
+        }
+        witness=z.has_value();
+        if(z) {
+            detail+=",\"z\":"+quote(z->get_str());
+            state.diagnostic->event("stage","WITNESS_FOUND","witness",0,detail);
+            if(diagnostic_boundary) diagnostic_boundary("witness_found");
+        }
+        if(state.slice.done()) {outcome("TARGET_ANALYSIS_BUDGET_EXCEEDED",z?"before_construction":"target_value");return;}
+        if(!z) {outcome("BIT_VALUE_UNREACHABLE","target_value",
+            ",\"proof_scope\":"+quote(line_mode?"feasible_and_observable_nonzero_line":"numeric_only_safe_region"));return;}
         Assignment candidate=seed;
         for(size_t j=0;j<seed.size();++j) candidate[j]+=*z*state.direction.delta[j];
+        constructed=true;
+        if(diagnostic_boundary) diagnostic_boundary("model_constructed");
+        if(state.slice.done()) state.diagnostic->event("stage","BUDGET_OBSERVED","before_deduplication",0,
+            diagnostic_budget(state.slice,witness,constructed,validated));
         auto key=f.key(candidate);
-        if(!scored.insert(key).second || emitted(key) || !action_scored.insert(key).second) {
-            ++result.duplicates;++stats.counts["duplicate_candidates"];return;
+        bool same=key==f.key(seed),in_batch=scored.count(key),in_action=action_scored.count(key),in_output=emitted(key);
+        // Preserve the original short-circuit insertion semantics and fixed primary priority.
+        bool duplicate=!scored.insert(key).second || in_output || !action_scored.insert(key).second;
+        if(duplicate) {
+            ++result.duplicates;++stats.counts["duplicate_candidates"];
+            std::string flags=",\"duplicate_flags\":{\"base\":"+std::string(same?"true":"false")+
+                ",\"batch\":"+(in_batch?"true":"false")+",\"action\":"+(in_action?"true":"false")+
+                ",\"committed\":"+(in_output?"true":"false")+"},\"exhaustiveness\":\"selected_witness_only\"";
+            outcome(diagnostic_duplicate_reason(same,in_batch,in_action,in_output),"deduplication",flags);return;
         }
+        state.diagnostic->event("stage","NEW_ASSIGNMENT","deduplication",0,detail);
         last_candidate=candidate;auto observed=f.evaluate(candidate);
         if(!f.validate(candidate) || (line_mode && !options.random &&
             (!observed.visited[target.node] || bit(observed.values[target.node],target.bit)!=target.desired))) {
@@ -154,7 +199,24 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
                 ",\"snapshot\":"+coverage.json()+"}";
             throw std::logic_error("streamed candidate violates original formula or line target");
         }
+        validated=true;
         auto gain=coverage.gain(observed);
+        const bool reached=observed.visited[target.node];
+        if(reached && !options.random && bit(observed.values[target.node],target.bit)!=target.desired) {
+            last_failure="{\"reason\":\"target_value_mismatch\",\"candidate\":"+f.model_json(candidate)+"}";
+            throw std::logic_error("diagnostic target arithmetic assertion mismatch");
+        }
+        const auto mask=uint64_t(1)<<target.bit;
+        const auto old=coverage.states[target.node];
+        bool opposite=target.desired ? (old.zero&mask) : (old.one&mask);
+        bool missing=target.desired ? !(old.one&mask) : !(old.zero&mask);
+        if(reached && opposite && missing && bit(observed.values[target.node],target.bit)==target.desired && !gain.covered) {
+            last_failure="{\"reason\":\"coverage_contract\",\"candidate\":"+f.model_json(candidate)+",\"snapshot\":"+coverage.json()+"}";
+            throw std::logic_error("observed opposite missing bit must add coverage");
+        }
+        if(!line_mode && !reached) state.diagnostic->event("stage","NUMERIC_HIT_NOT_OBSERVED","observation",0,detail);
+        outcome(gain.covered?"NEW_COVERAGE":gain.observed?"NEW_OBSERVATION_ONLY":"ZERO_INCREMENT","coverage",
+            ",\"gain\":"+std::to_string(gain.covered)+",\"new_observations\":"+std::to_string(gain.observed));
         ++result.scored;++stats.counts["unique_candidates_scored"];
         if(!state.candidates++) ++stats.counts[prefix+"directions_produced_candidates"];
         ++stats.counts[prefix+"direction_"+state.direction.source+"_successes"];
@@ -178,12 +240,24 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         const auto preparation_start=Clock::now();
         ++stats.counts[prefix+"directions_considered"];
         auto state=std::make_unique<State>();state->direction=direction;arm(*state);
+        state->diagnostic=std::make_unique<DiagnosticUnit>(stats,diagnostic_trace,options.diagnostics,
+            line_mode?"line":"safe",direction.source,system.scope);
+        if(diagnostic_trace) {
+            z3::solver scope(f.ctx);scope.add(line_mode?f.root:region->expression());
+            state->diagnostic->context(f,seed,direction.delta,scope.to_smt2(),system.signature());
+        }
+        state->diagnostic->event("stage","DIRECTION_GENERATED","direction");
+        if(!system.kernel(direction.delta)) throw std::logic_error("diagnostic direction violates declared equality scope");
+        state->diagnostic->event("stage","DIRECTION_VALID","direction");
+        auto phase=[&](const std::string &code,const std::string &stage,const std::string &extra="") {
+            state->diagnostic->event("phase",code,stage,std::chrono::duration<double>(Clock::now()-preparation_start).count(),extra,code!="NONZERO_FEASIBLE");
+        };
         auto alpha=[&](int node)->std::optional<Z> {
             try {return line_mode ? syntax->linear(node,state->slice).dot(direction.delta) : region->linear(node,false).dot(direction.delta);}
             catch(const LineFailure &) {return {};}
             catch(const std::domain_error &) {return {};}
         };
-        state->goals=options.matching ?
+        state->goals=diagnostic_targets ? diagnostic_targets() : options.matching ?
             (options.directional_targets ? targets.related(coverage,direction.delta,rng,16,state->slice,stats,alpha) :
              targets.select(coverage,rng,32,state->slice,&direction.delta)) : active_targets(f,coverage,rng,32);
         if(!state->goals.empty() && !state->slice.done()) {
@@ -194,19 +268,30 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
                 ++stats.counts["line_domain_"+line_status_name(feasible.status)];
                 if(feasible.status!=LineStatus::Exact) {
                     ++stats.counts[feasible.status==LineStatus::Unsupported ? "line_analysis_unsupported" : "line_analysis_timeout"];
+                    phase(feasible.status==LineStatus::Unsupported?"FEASIBILITY_UNSUPPORTED":"FEASIBILITY_BUDGET_EXCEEDED","feasibility",diagnostic_budget(state->slice,false,false,false));
                     // This direction may have exhausted its slice. Never discard earlier models.
                     state->goals.clear();
                 } else {
                     state->exact=true;
                     stats.counts["line_nonzero_components"]+=feasible.domain.without(0).intervals.size();
-                    if(feasible.domain.without(0).intervals.empty()) state->goals.clear();
+                    bool origin=feasible.domain.without(0).intervals.empty();
+                    phase(origin?"ORIGIN_ONLY":"NONZERO_FEASIBLE","feasibility",
+                        diagnostic_trace?",\"domain\":"+feasible.domain.json():"");
+                    if(origin) state->goals.clear();
                 }
             } else {
                 auto interval=region->interval(seed,direction.delta);
                 state->ranges=LineDomain({interval}).without(0).intervals;
+                state->exact=true;
+                phase(state->ranges.empty()?"ORIGIN_ONLY":"NONZERO_FEASIBLE","feasibility",
+                    diagnostic_trace?",\"domain\":"+LineDomain({interval}).json():"");
                 if(state->ranges.empty()) state->goals.clear();
             }
-        } else state->goals.clear();
+        } else {
+            if(state->goals.empty()) state->diagnostic->event("stage","TARGET_POOL_EMPTY","target_pool");
+            phase("FEASIBILITY_NOT_CHECKED",state->slice.done()?"target_pool_budget":"target_pool_empty",diagnostic_budget(state->slice,false,false,false));
+            state->goals.clear();
+        }
         directions.push_back(std::move(state));result.direction_attempts.push_back(0);
         stats.times[prefix+"direction_"+direction.source+"_seconds"]+=
             std::chrono::duration<double>(Clock::now()-preparation_start).count();
@@ -216,7 +301,10 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
             attempt(directions.size()-1);
         return !full();
     };
-    if(options.quotas || line_mode)
+    const auto no_direction_before=stats.counts["direction_nullspace_zero"];
+    if(diagnostic_directions) {
+        for(const auto &direction:*diagnostic_directions) if(!prepare(direction)) break;
+    } else if(options.quotas || line_mode)
         quota_directions(system,history,seed,budget,rng,stats,dc,options.quotas,prepare);
     else for(auto &d:lia::directions(*region,rng,stats,dc)) {
         if(!prepare({d,"legacy",system.scope,system.signature()})) break;
@@ -228,8 +316,31 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         }
         if(!remaining) break;
     }
-    for(const auto &state:directions)
+    for(const auto &state:directions) {
         if(line_mode && state->exact && !state->candidates) ++stats.counts["line_exact_but_no_candidate"];
+        if(state->next<state->goals.size()) state->diagnostic->event("stage",budget.done()?"BUDGET_EXIT":"BOUNDED_SEARCH_INCOMPLETE","remaining_targets",0,diagnostic_budget(budget,false,false,false));
+        state->diagnostic->finish("NO_TARGET_ATTEMPT");
+    }
+    if(directions.empty()) {
+        const bool proved=stats.counts["direction_nullspace_zero"]>no_direction_before;
+        std::string proof;
+        if(proved && diagnostic_trace) {
+            z3::solver query(f.ctx);z3::expr_vector delta(f.ctx),nonzero(f.ctx);
+            for(size_t i=0;i<system.width;++i) {
+                delta.push_back(f.ctx.int_const(("__diagnostic_delta_"+std::to_string(i)).c_str()));
+                nonzero.push_back(delta[i]!=0);
+            }
+            for(const auto &row:system.equations) {
+                auto sum=f.ctx.int_val(0);
+                for(const auto &[i,v]:row.a) sum=sum+f.ctx.int_val(v.get_str().c_str())*delta[i];
+                query.add(sum==0);
+            }
+            for(int i:system.booleans) query.add(delta[i]==0);
+            query.add(z3::mk_or(nonzero));proof=",\"proof_query\":"+quote(query.to_smt2());
+        }
+        batch.event("batch",proved?"NO_DIRECTION_PROVED":"DIRECTION_GENERATION_INCOMPLETE","direction_generation",0,
+            diagnostic_budget(budget,false,false,false)+proof);
+    }
     if(result.model && line_mode && region && region->supported && !region->contains(*result.model))
         ++stats.counts["line_cross_branch_moves"];
     if(result.first_valid_seconds>=0) {
@@ -241,6 +352,9 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
         ++stats.counts[prefix+"batches_with_positive_candidate"];
     }
     result.status=result.model ? "candidate" : budget.done() ? "budget_exhausted" : "no_candidate";
+    batch.event("batch",result.model?(result.gain.covered?"NEW_COVERAGE":result.gain.observed?"NEW_OBSERVATION_ONLY":"ZERO_INCREMENT"):
+        budget.done()?"BUDGET_EXIT":"NO_NEW_CANDIDATE_FOUND","terminal",std::chrono::duration<double>(Clock::now()-begin).count(),
+        ",\"proof_scope\":\"bounded_search_only\"");
     return result;
 }
 }

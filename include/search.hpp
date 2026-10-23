@@ -1,6 +1,7 @@
 #pragma once
 #include "core.hpp"
 #include "line.hpp"
+#include "diagnostics.hpp"
 #include <unordered_set>
 
 namespace lia {
@@ -8,6 +9,7 @@ struct SearchOptions {
     bool quotas = true, fair = true, matching = true, polish = true;
     bool line = false, repair = false, random = false;
     bool streaming = true, directional_targets = true, polish_split = true, rotation_fix = true;
+    bool diagnostics = true;
     unsigned direction_cap = 20, candidate_cap = 24, attempt_cap = 256, polish_steps = 6;
     double polish_seconds = .06;
     unsigned polish_step_candidates = 4, polish_flat_steps = 2;
@@ -93,6 +95,11 @@ class Search {
     bool line_supported = true;
     // Injectable deadline/failure boundary used by deterministic anytime regression tests.
     std::function<void(unsigned)> direction_boundary;
+    DiagnosticTrace *diagnostic_trace = nullptr;
+    std::function<void(const std::string &)> diagnostic_boundary;
+    // Synthetic mechanism tests only. Production leaves both empty.
+    std::function<std::vector<Target>()> diagnostic_targets;
+    std::optional<std::vector<Direction>> diagnostic_directions;
     explicit Search(Formula &formula) : f(formula), targets(formula) {}
     void begin_action() { action_scored.clear(); }
     CandidateBatch safe(const Assignment &seed, const Coverage &coverage, Budget &budget,

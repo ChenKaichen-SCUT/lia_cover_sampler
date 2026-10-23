@@ -58,6 +58,7 @@ class LineAnalyzer {
     LineDomain truth(int node);
     LineDomain reach(int node);
   public:
+    bool last_observable_empty = false;
     LineAnalyzer(Formula &formula, const Assignment &base, const Assignment &direction,
                  AffineSyntax &syntax, Budget &budget);
     LineResult feasible();

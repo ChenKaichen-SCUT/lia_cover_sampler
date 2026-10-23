@@ -18,6 +18,7 @@ struct Budget {
     Clock::time_point start = Clock::now();
     double seconds = 900;
     const Budget *parent = nullptr;
+    const char *label = "global";
     double elapsed() const { return std::chrono::duration<double>(Clock::now() - start).count(); }
     double total_elapsed() const { return parent ? parent->total_elapsed() : elapsed(); }
     double left() const {

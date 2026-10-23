@@ -26,9 +26,12 @@ int main(int argc,char **argv) {
         auto prior=coverage.gain(f.evaluate(seed));
         Search search(f);search.options.line=true;
         std::string mode=argv[5],module=argv[4];
-        if(mode!="eager" && mode!="stream" && mode!="new") throw std::invalid_argument("snapshot mode");
+        if(mode!="eager" && mode!="stream" && mode!="new" && mode!="diagnostic" && mode!="diagnostic_off") throw std::invalid_argument("snapshot mode");
+        DiagnosticTrace diagnostics;
+        if(mode=="diagnostic") search.diagnostic_trace=&diagnostics;
+        search.options.diagnostics=mode!="diagnostic_off";
         search.options.streaming=mode!="eager";search.options.directional_targets=mode!="eager";
-        search.options.polish_split=mode=="new";search.targets.rotation_fix=mode!="eager";
+        search.options.polish_split=mode!="eager" && mode!="stream";search.targets.rotation_fix=mode!="eager";
         search.options.polish_step_candidates=std::stoul(argv[9]);
         Stats stats;std::mt19937_64 rng(std::stoull(argv[7]));Budget budget;budget.seconds=std::stod(argv[6]);
         std::optional<Assignment> candidate;Gain gain;double first=-1,positive=-1;
@@ -55,7 +58,8 @@ int main(int argc,char **argv) {
             <<",\"first_positive_seconds\":"<<(positive<0 ? "null" : std::to_string(positive))
             <<",\"moves\":"<<moves<<",\"attempted_steps\":"<<steps<<",\"status\":"<<quote(status)
             <<",\"candidate\":"<<(candidate ? f.model_json(*candidate) : "null")
-            <<",\"seed\":"<<f.model_json(seed)<<",\"snapshot\":"<<snapshot<<",\"statistics\":"<<stats.json()<<"}\n";
+            <<",\"seed\":"<<f.model_json(seed)<<",\"snapshot\":"<<snapshot<<",\"diagnostics\":"<<diagnostics.json()
+            <<",\"statistics\":"<<stats.json()<<"}\n";
         return 0;
     } catch(const std::exception &error) {std::cerr<<error.what()<<'\n';return 1;}
 }

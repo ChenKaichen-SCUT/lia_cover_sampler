@@ -246,8 +246,9 @@ LineResult LineAnalyzer::observable(int node) {
 LineResult LineAnalyzer::boolean_target(Target target) {
     try {
         auto value=truth(target.node);
-        return {LineStatus::Exact,bounded(truth(0).intersect(reach(target.node)).intersect(
-            target.desired ? value : value.complement())),""};
+        auto observable=truth(0).intersect(reach(target.node));
+        last_observable_empty=observable.without(0).intervals.empty();
+        return {LineStatus::Exact,bounded(observable.intersect(target.desired ? value : value.complement())),""};
     } catch (const LineFailure &error) { return {error.status,{},error.what()}; }
 }
 std::optional<Z> line_bit_witness(const LineDomain &domain, const Z &alpha, const Z &beta,
