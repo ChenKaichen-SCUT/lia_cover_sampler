@@ -37,12 +37,12 @@ def main():
     p.add_argument("--binary",type=Path,default=ROOT/"build/lia_cover_sampler")
     p.add_argument("--control-binary",type=Path,default=ROOT/"build/round2/control_ab_fixed/lia_cover_sampler")
     p.add_argument("--seconds",type=float,default=900)
-    p.add_argument("--jobs",type=int,default=12)
+    p.add_argument("--jobs",type=int,default=15)
     p.add_argument("--split",choices=["development","all"],default="all")
     p.add_argument("--configs",default=",".join(CONFIGS))
     p.add_argument("--extra",nargs=argparse.REMAINDER,default=[])
     a=p.parse_args()
-    if not 1<=a.jobs<=12 or a.seconds<=0:p.error("jobs 1..12 and positive deadline required")
+    if not 1<=a.jobs<=15 or a.seconds<=0:p.error("jobs 1..15 and positive deadline required")
     names=a.configs.split(",")
     if not names or set(names)-CONFIGS.keys():p.error("unknown configuration")
     inputs=json.loads((ROOT/"benchmarks/manifest.json").read_text())
@@ -74,7 +74,7 @@ def main():
                 manifest["instances"].append(job);jobs.append(job)
             write(folder/"manifest.json",manifest)
             batches[folder.name]=manifest
-    # Initially nine time tasks then three count tasks; completion immediately frees a
+    # Initially time tasks then count tasks; completion immediately frees a
     # slot for the next task, independently of configuration or protocol.
     jobs.sort(key=lambda j:(names.index(j["configuration"]),j["protocol"]!="time",j["instance"]))
     write(a.output/"plan.json",dict(created_utc=stamp,workers=a.jobs,seconds=a.seconds,

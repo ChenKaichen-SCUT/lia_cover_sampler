@@ -29,7 +29,7 @@ def main():
     p.add_argument("--seeds", default="0,1,2")
     p.add_argument("--seconds", type=float, default=30)
     p.add_argument("--samples", type=int, default=1000)
-    p.add_argument("--jobs", type=int, default=12)
+    p.add_argument("--jobs", type=int, default=15)
     p.add_argument("--new-highdiv-batch", action="store_true",
                    help="explicitly start a separately requested HighDiv batch in a new directory; "
                         "preserve the frozen baseline")
@@ -40,8 +40,8 @@ def main():
     if a.variant == "highdiv" and frozen_baseline.exists() and not a.new_highdiv_batch:
         p.error("HighDiv baseline is frozen. Reuse its saved samples. For a separately requested "
                 "new experiment, use --new-highdiv-batch with a new --output directory.")
-    if not 1 <= a.jobs <= 12 or a.seconds <= 0 or a.samples <= 0:
-        p.error("jobs must be 1..12; seconds/samples must be positive")
+    if not 1 <= a.jobs <= 15 or a.seconds <= 0 or a.samples <= 0:
+        p.error("jobs must be 1..15; seconds/samples must be positive")
     a.output = a.output.resolve()
     # The atomic mkdir is also the baseline-once lock. Interrupted batches remain locked.
     a.output.mkdir(parents=True, exist_ok=False)

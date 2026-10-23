@@ -6,7 +6,9 @@
 
 第一轮冻结结果见 [900 秒两组独立实验报告](docs/900秒实验报告.md)：固定时间下 HighDiv / LIA 平均覆盖率为 55.733% / 56.106%，样本总数为 206,438 / 33,254；双方均完成 1000 个样本的六个案例中，平均覆盖率为 76.651% / 76.592%。四批原始结果、逐案例审计、完整压缩包和可复现分析脚本均已保存；包含超时的九案例终点与严格等样本量比较分别报告。
 
-第二轮按更新后的指引增加独立控制预算、动作调度、方向配额、单模型改进、精确跨分支区间集合和目标包修复。配置、12 槽混合队列与复现命令见 [第二轮实现与复现](docs/第二轮实现与复现.md)。
+第二轮按更新后的指引增加独立控制预算、动作调度、方向配额、单模型改进、精确跨分支区间集合和目标包修复。配置、15 槽混合队列与复现命令见 [第二轮实现与复现](docs/第二轮实现与复现.md)。
+
+第二轮 **144 个实验与全部独立审计已完成**，见 [第二轮实验报告](docs/第二轮实验报告.md)。HighDiv / 原 LIA / 完整版的 900 秒九例平均覆盖率分别为 55.733% / 56.106% / 56.151%；三者共同完成 1000 个的六例覆盖率为 76.651% / 76.592% / 76.557%。完整版改善了相对原 LIA 的前 5/10/50 个样本覆盖，但没有同时改善时间与严格等样本量指标。仅修复 A/B 的对照版本终点均值最高，评测集退化与机制成本均在报告中保留。结果位于 results/round2_formal_v2 和 results/round2_analysis；未重跑冻结基线。
 
 ## 构建与测试
 
@@ -85,11 +87,11 @@ results/baseline_once 是不可覆盖的一次基线批次：9 实例 × 种子 
 
     python3 scripts/run_experiments.py --binary build/lia_cover_sampler --variant full \
       --benchmarks benchmarks --output results/iteration_02 \
-      --jobs 12 --seconds 30 --samples 1000 --seeds 0,1,2
+      --jobs 15 --seconds 30 --samples 1000 --seeds 0,1,2
     HIGHDIV_ROOT=dependencies/HighDiv dependencies/HighDiv/venv/bin/python3 \
-      scripts/audit_experiments.py results/iteration_02 --jobs 12
+      scripts/audit_experiments.py results/iteration_02 --jobs 15
 
-runner 用 12 个控制线程管理最多 12 个独立采样进程，各求解器单线程；Python/Z3 复核用独立进程，避免共享 context。计时从创建进程前开始，严格截止时终止进程组；timeout_partial 与正常完成分开，只统计完整行且时间戳未超预算的有效不同样本。
+runner 默认用 15 个控制线程管理最多 15 个独立采样进程，各求解器单线程；Python/Z3 复核用独立进程，避免共享 context。计时从创建进程前开始，严格截止时终止进程组；timeout_partial 与正常完成分开，只统计完整行且时间戳未超预算的有效不同样本。
 
 ### 两组独立实验：相同时间与相同样本数
 
@@ -102,7 +104,7 @@ runner 用 12 个控制线程管理最多 12 个独立采样进程，各求解�
 
 相同时间组将 --samples 设为双方支持的最大值 4294967295，使数量实际上不构成限制；若解空间耗尽或算法自身结束，仍可能提前停止，需按实际状态报告。相同个数组若超时未满 1000 个，必须报告实际数量，不能标记为已经完成等样本量比较。
 
-第一轮四个批次已经完成，保存于 results/highdiv_time900、results/lia_time900、results/highdiv_count1000_t900、results/lia_count1000_t900。第二轮直接读取这些审计与样本，不再启动两个冻结版本。新算法的两种预算共用一个 12 槽队列，见 [第二轮命令](docs/第二轮实现与复现.md)。
+第一轮四个批次已经完成，保存于 results/highdiv_time900、results/lia_time900、results/highdiv_count1000_t900、results/lia_count1000_t900。第二轮直接读取这些审计与样本，不再启动两个冻结版本。新算法的两种预算共用一个 15 槽队列，见 [第二轮命令](docs/第二轮实现与复现.md)。
 
 HighDiv + filter 重放冻结候选序列，不再生成候选。样本数覆盖可精确复算；其时间包含实测验证/评分成本，但属于串行重建，不能当作重新运行过的在线包装实验。
 

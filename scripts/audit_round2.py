@@ -11,9 +11,9 @@ from audit_experiments import audit_job
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("root",type=Path)
-    p.add_argument("--jobs",type=int,default=12)
+    p.add_argument("--jobs",type=int,default=15)
     a=p.parse_args()
-    if not 1<=a.jobs<=12:p.error("jobs must be 1..12")
+    if not 1<=a.jobs<=15:p.error("jobs must be 1..15")
     work=[]
     for folder in sorted(a.root.iterdir()):
         if not folder.is_dir() or not (folder/"COMPLETE.json").exists():continue

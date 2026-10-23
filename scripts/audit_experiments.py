@@ -177,7 +177,7 @@ def audit_job(payload):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("run", type=Path)
-    p.add_argument("--jobs", type=int, default=12)
+    p.add_argument("--jobs", type=int, default=15)
     a = p.parse_args()
     manifest = json.loads((a.run / "manifest.json").read_text())
     jobs = [json.loads(s) for s in (a.run / "runs.jsonl").read_text().splitlines()]

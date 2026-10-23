@@ -25,6 +25,19 @@ def require(condition,message):
 def analyze(source,output,baselines=True):
     source=source.resolve();output=output.resolve()
     output.mkdir(parents=True,exist_ok=True)
+    plan=json.loads((source/"plan.json").read_text())
+    complete=json.loads((source/"COMPLETE.json").read_text())
+    require(not complete["cancelled"] and complete["errors"]==0,"failed or cancelled queue")
+    require(complete["plan_sha256"]==digest(source/"plan.json"),"changed queue plan")
+    require(complete["queue_sha256"]==digest(source/"queue.jsonl"),"changed queue journal")
+    queue=[json.loads(s) for s in (source/"queue.jsonl").read_text().splitlines()]
+    key=lambda r:(r["batch"],r["instance"],r["seed"])
+    require(len(queue)==len(plan["queue"])==complete["runs"],"incomplete queue")
+    require(len({key(r) for r in queue})==len(queue),"duplicate queue job")
+    require({key(r) for r in queue}=={key(r) for r in plan["queue"]},"queue job mismatch")
+    if "concurrency_changes_sha256" in complete:
+        require(complete["concurrency_changes_sha256"]==digest(source/"concurrency_changes.jsonl"),
+                "changed concurrency history")
     splits={r["path"]:r["split"] for r in json.loads((ROOT/"benchmarks/manifest.json").read_text())}
     batches=[(folder.name.rsplit("_",1)[0],folder.name.rsplit("_",1)[1],folder)
              for folder in sorted(source.iterdir()) if (folder/"audit_summary.json").exists()]
@@ -34,6 +47,9 @@ def analyze(source,output,baselines=True):
                 batches.append((algorithm,protocol,ROOT/"results"/(old+"_"+suffix)))
     data={};endpoints=[];prefixes=[];early=[];modules=[];origins=[];mechanisms=[]
     hashes={};validation=Counter();statistics_partial=0
+    for name in ("plan.json","queue.jsonl","COMPLETE.json","concurrency_changes.jsonl","runtime.json"):
+        path=source/name
+        if path.exists():hashes[str(path.relative_to(ROOT))]=digest(path)
     for algorithm,protocol,folder in batches:
         manifest=json.loads((folder/"manifest.json").read_text())
         complete=json.loads((folder/"COMPLETE.json").read_text())
@@ -173,13 +189,19 @@ def analyze(source,output,baselines=True):
     csvfile(output/"early_times.csv",early);csvfile(output/"modules.csv",modules)
     csvfile(output/"provenance.csv",origins);csvfile(output/"summary.csv",summaries)
     csvfile(output/"paired.csv",pairs);write(output/"mechanisms.json",mechanisms)
+    plan=json.loads((source/"plan.json").read_text())
+    changes_path=source/"concurrency_changes.jsonl"
+    changes=[json.loads(s) for s in changes_path.read_text().splitlines()] if changes_path.exists() else []
+    workers=changes[-1]["new_workers"] if changes else plan["workers"]
     write(output/"analysis.json",dict(summary=summaries,paired=pairs,validation=dict(validation),
         runs=len(endpoints),partial_statistics=statistics_partial,source_hashes=hashes,
+        initial_workers=plan["workers"],effective_workers=workers,concurrency_changes=changes,
         notes=["seed 0 only; no uncertainty estimate from one seed",
                "prefix comparison excludes either side not reaching k; no extrapolation",
                "endpoint count protocol means 1000 samples OR 900 seconds, not necessarily equal counts",
                "action parent seconds, stage seconds and refinement seconds must not be summed",
-               "new runs share 12 slots; frozen baseline batches had at most 9 concurrent cases"]))
+               f"new runs initially shared {plan['workers']} slots, final limit {workers}; frozen baseline batches had at most 9 concurrent cases",
+               "adopted controller starts reconstructed from kernel ticks or log birth; native sampler timers unchanged"] ))
     return summaries
 
 def main():
