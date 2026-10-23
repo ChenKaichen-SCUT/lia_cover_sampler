@@ -100,6 +100,7 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
     ++stats.counts["global_calls"];
     auto res = solver.check(assumptions);
     GlobalResult out;
+    for (int id : pack) out.attempted.push_back(registered_targets.at(id));
     if (res == z3::sat) {
         out.model = f.complete(solver.get_model());
         out.status = "sat";

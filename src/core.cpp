@@ -37,7 +37,7 @@ std::string Stats::json() const {
         first = false;
         o << quote(k) << ':' << v;
     }
-    o << "},\"counts\":{";
+    o << "},\"refinement_seconds\":" << refinement_seconds << ",\"counts\":{";
     first = true;
     for (auto &[k, v] : counts) {
         if (!first)

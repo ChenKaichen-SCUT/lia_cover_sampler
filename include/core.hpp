@@ -34,6 +34,7 @@ struct Stats {
     std::map<std::string, double> times;
     // Parent action costs are deliberately separate from nested stage costs.
     std::map<std::string, double> action_times;
+    double refinement_seconds = 0;
     std::map<std::string, unsigned long> counts;
     std::string json() const;
 };
@@ -175,6 +176,7 @@ struct GlobalResult {
     SolveStatus code = SolveStatus::Unknown;
     unsigned actual_timeout_ms = 0, resource_limit = 0;
     double elapsed_seconds = 0;
+    std::vector<Target> attempted;
 };
 class Global {
     Formula &f;
@@ -204,6 +206,10 @@ class Global {
     GlobalResult explore(const Assignment &current, Budget &budget, Stats &stats,
                          unsigned allocation_ms = 0xffffffffU);
     size_t blocked_models() const { return blocked_model_keys.size(); }
+    bool unreachable(Target target) const {
+        auto it = ids.find(target);
+        return it != ids.end() && conflicts.blocked({it->second});
+    }
     void rebuild_exploration(Stats &stats);
     void validate_conflicts(const Assignment &model);
     std::string query_smt2() {

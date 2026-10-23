@@ -1,5 +1,6 @@
 #include "core.hpp"
 #include "scheduler.hpp"
+#include "search.hpp"
 #include <thread>
 #include <algorithm>
 #include <filesystem>
@@ -12,7 +13,9 @@ namespace fs = std::filesystem;
 struct Options {
     std::string input, output = ".", mode = "benchmark", variant = "full", audit;
     unsigned n = 1000, seed = 0;
-    bool adaptive = true;
+    bool adaptive = true, new_generation = true;
+    std::string profile = "full", disable;
+    SearchOptions search;
     double seconds = 900;
 };
 void signal_handler(int) { interrupted = 1; }
@@ -39,6 +42,13 @@ Options parse(int argc, char **argv) {
             a.seconds = std::stod(v);
         else if (k == "-s")
             a.seed = std::stoul(v);
+        else if (k == "--profile") a.profile = v;
+        else if (k == "--disable") a.disable = v;
+        else if (k == "--direction-cap") a.search.direction_cap = std::stoul(v);
+        else if (k == "--candidate-cap") a.search.candidate_cap = std::stoul(v);
+        else if (k == "--attempt-cap") a.search.attempt_cap = std::stoul(v);
+        else if (k == "--polish-steps") a.search.polish_steps = std::stoul(v);
+        else if (k == "--polish-ms") a.search.polish_seconds = std::stod(v) / 1000;
         else if (k == "--scheduler") {
             if (v != "legacy" && v != "adaptive") throw std::invalid_argument("invalid scheduler");
             a.adaptive = v == "adaptive";
@@ -58,6 +68,29 @@ Options parse(int argc, char **argv) {
         throw std::invalid_argument("invalid mode");
     if (a.variant != "full" && a.variant != "random" && a.variant != "no-cache" && a.variant != "global-only")
         throw std::invalid_argument("invalid variant");
+    if (a.profile != "schedule" && a.profile != "directions" && a.profile != "polish" &&
+        a.profile != "line" && a.profile != "full") throw std::invalid_argument("invalid profile");
+    a.new_generation = a.profile != "schedule";
+    if (!a.new_generation) a.search.quotas = a.search.fair = a.search.matching = a.search.polish = false;
+    if (a.profile == "directions") a.search.polish = false;
+    a.search.random = a.variant == "random";
+    std::istringstream disabled(a.disable); std::string name;
+    while (std::getline(disabled,name,',')) {
+        if (name == "quotas") a.search.quotas = false;
+        else if (name == "fair") a.search.fair = false;
+        else if (name == "matching") a.search.matching = false;
+        else if (name == "polish") a.search.polish = false;
+        else if (name == "line") a.search.line = false;
+        else if (name == "repair") a.search.repair = false;
+        else if (name == "scheduler") a.adaptive = false;
+        else if (!name.empty()) throw std::invalid_argument("unknown disabled feature " + name);
+    }
+    if (a.variant == "global-only") a.search.polish = a.search.line = false;
+    if (!a.search.direction_cap || a.search.direction_cap > 256 || !a.search.candidate_cap ||
+        a.search.candidate_cap > 4096 || !a.search.attempt_cap || a.search.attempt_cap > 16384 ||
+        a.search.polish_steps > 128 || !std::isfinite(a.search.polish_seconds) ||
+        a.search.polish_seconds < 0 || a.search.polish_seconds > 5)
+        throw std::invalid_argument("search budget outside supported bounds");
     return a;
 }
 int main(int argc, char **argv) {
@@ -66,6 +99,7 @@ int main(int argc, char **argv) {
     Assignment current;
     std::unique_ptr<Formula> f;
     std::unique_ptr<Global> global;
+    std::unique_ptr<Search> search;
     std::string last_context = "{}";
     Stats stats;
     try {
@@ -107,6 +141,14 @@ int main(int argc, char **argv) {
         if (fs::exists(fs::path(opt.output) / "summary.json") ||
             fs::exists(fs::path(opt.output) / "models.jsonl"))
             throw std::runtime_error("output directory already contains a run");
+        std::ofstream(fs::path(opt.output)/"config.json") << "{\"profile\":" << quote(opt.profile)
+            << ",\"scheduler\":" << quote(opt.adaptive ? "adaptive" : "legacy")
+            << ",\"quotas\":" << opt.search.quotas << ",\"fair\":" << opt.search.fair
+            << ",\"matching\":" << opt.search.matching << ",\"polish\":" << opt.search.polish
+            << ",\"line\":" << opt.search.line << ",\"repair\":" << opt.search.repair
+            << ",\"direction_cap\":" << opt.search.direction_cap << ",\"candidate_cap\":" << opt.search.candidate_cap
+            << ",\"attempt_cap\":" << opt.search.attempt_cap << ",\"polish_steps\":" << opt.search.polish_steps
+            << ",\"polish_seconds\":" << opt.search.polish_seconds << "}\n";
         std::ofstream typed(fs::path(opt.output) / "models.jsonl"), samples, trace;
         std::ofstream emission(fs::path(opt.output) / "emission.csv");
         if (!typed)
@@ -147,8 +189,15 @@ int main(int argc, char **argv) {
             fs::rename(temporary, fs::path(opt.output) / "progress.json");
             last_checkpoint = budget.elapsed();
         };
+        std::mt19937_64 rng(opt.seed);
         ProgressFeedback round_feedback;
-        auto accept = [&](const Assignment &m, const std::string &category) -> AcceptResult {
+        Budget *active_budget = &budget;
+        std::string parent_seed_id = "none", seed_origin, seed_id;
+        PolishResult refinement;
+        unsigned polish_flat = 0;
+        double polish_cooldown = 0;
+        auto already_emitted = [&](const std::string &key) { return emitted.count(key) != 0; };
+        auto commit = [&](const Assignment &m, const std::string &category) -> AcceptResult {
             if (count >= opt.n || budget.done())
                 return {};
             auto key = f->key(m);
@@ -176,7 +225,22 @@ int main(int argc, char **argv) {
             double time = budget.elapsed();
             std::ostringstream line;
             line << "{\"index\":" << count << ",\"elapsed\":" << std::setprecision(10) << time
-                 << ",\"category\":" << quote(category) << ",\"new_coverage\":" << g.covered
+                 << ",\"category\":" << quote(category)
+                 << ",\"seed_origin\":" << quote(seed_origin)
+                 << ",\"seed_id\":" << quote(seed_id) << ",\"parent_seed_id\":" << quote(parent_seed_id)
+                 << ",\"gain_before_refinement\":" << refinement.before.covered
+                 << ",\"gain_after_refinement\":" << refinement.after.covered
+                 << ",\"refinement_seconds\":" << refinement.seconds
+                 << ",\"seed_gain_retained\":" << refinement.retained
+                 << ",\"refinement_added\":" << refinement.added
+                 << ",\"seed_gain_lost\":" << refinement.lost
+                 << ",\"final_emitted_gain\":" << g.covered
+                 << ",\"refinement_modules\":[";
+            for (size_t i=0;i<refinement.modules.size();++i) {
+                if (i) line << ',';
+                line << quote(refinement.modules[i]);
+            }
+            line << "],\"new_coverage\":" << g.covered
                  << ",\"new_observations\":" << g.observed
                  << ",\"covered\":" << coverage.covered() + g.covered << ",\"total\":" << f->total_bits()
                  << ",\"assignment\":" << f->model_json(m) << "}\n";
@@ -210,6 +274,26 @@ int main(int argc, char **argv) {
             round_feedback.add(result);
             return result;
         };
+        auto accept = [&](const Assignment &seed, const std::string &category) -> AcceptResult {
+            if (budget.done() || count>=opt.n) return {};
+            seed_id = assignment_id(*f, seed);
+            seed_origin = category.rfind("local",0)==0 ? "local_safe" :
+                          category.rfind("global",0)==0 ? "target" : category;
+            refinement = {};
+            refinement.model = seed;
+            refinement.before = refinement.after = coverage.gain(f->evaluate(seed));
+            refinement.retained = refinement.before.covered;
+            if (search && opt.search.polish && category != "initial" &&
+                budget.elapsed() >= polish_cooldown && active_budget->left() > .002) {
+                Budget polish_budget; polish_budget.parent = active_budget;
+                polish_budget.seconds = std::min(active_budget->left(), opt.search.polish_seconds);
+                refinement = search->polish_candidate(seed,coverage,polish_budget,rng,stats,already_emitted);
+                if (refinement.after.covered > refinement.before.covered) polish_flat = 0;
+                else if (++polish_flat >= 3) polish_cooldown = budget.elapsed() + std::min(1.0, .02*polish_flat);
+            }
+            current = refinement.model;
+            return commit(current,category);
+        };
         std::string status = "sample_limit";
         z3::solver initial(f->ctx);
         initial.add(f->root);
@@ -238,11 +322,16 @@ int main(int argc, char **argv) {
             if (status == "sample_limit")
                 status = "time_limit_without_model";
         }
-        std::mt19937_64 rng(opt.seed);
         if (status == "running") {
             accept(current, "initial");
             global = std::make_unique<Global>(*f, opt.seed);
             global->use_cache = opt.variant != "no-cache";
+            if (opt.new_generation) {
+                Timer setup(stats, "target_manager_setup");
+                search = std::make_unique<Search>(*f);
+                search->options = opt.search;
+                search->targets.globally_unreachable = [&](Target target) { return global->unreachable(target); };
+            }
             if (trace.is_open())
                 global->trace = log;
             std::vector<Assignment> cached_directions;
@@ -269,6 +358,11 @@ int main(int argc, char **argv) {
                 slice.parent = &budget;
                 if (selection) slice.seconds = std::min(budget.left(), selection->seconds);
                 Budget &work_budget = selection ? slice : budget;
+                active_budget = &work_budget;
+                parent_seed_id = assignment_id(*f,current);
+                if (search) search->begin_action();
+                const auto before_attempts = stats.counts["candidate_attempts"];
+                const auto before_unique = stats.counts["unique_candidates_scored"];
                 const unsigned before_count = count;
                 const auto before_candidates = stats.counts["local_candidates"];
                 const auto before_duplicates = stats.counts["duplicate_candidate_assignment"];
@@ -277,14 +371,31 @@ int main(int argc, char **argv) {
                 std::vector<Target> targets;
                 {
                     Timer target_timer(stats, "active_targets");
-                    targets = active_targets(*f, coverage, rng, 48);
+                    targets = search && opt.search.matching ?
+                        search->targets.select(coverage,rng,48,work_budget) : active_targets(*f, coverage, rng, 48);
                 }
                 bool progress = false;
                 bool do_local = opt.variant != "global-only" && round % 5 != 0 &&
                                 (stalled < 3 || round % 3 == 0) &&
                                 (recent_local_cost < 0.1 || recent_local_gain >= 1 || round % 3 == 0);
                 if (selection) do_local = selection->kind == ActionKind::LocalSafe;
-                if (do_local) {
+                if (do_local && search) {
+                    Budget generation; generation.parent = &work_budget;
+                    generation.seconds = work_budget.left() * (opt.search.polish ? .65 : 1.0);
+                    auto batch = search->safe(current,coverage,generation,rng,stats,seed_bank,already_emitted);
+                    action_status = batch.status;
+                    if (batch.model) {
+                        current = *batch.model;
+                        if (batch.gain.covered || batch.gain.observed || stalled>=2)
+                            accept(current,batch.gain.covered ? "local_gain" : batch.gain.observed ? "local_observation" : "local_fill");
+                        else {
+                            if (seed_bank.size()==16) seed_bank.erase(seed_bank.begin());
+                            seed_bank.push_back(current);
+                        }
+                    }
+                    progress = round_feedback.coverage > 0;
+                }
+                if (do_local && !search) {
                     auto batch_start = Clock::now();
                     Observation seed_observation;
                     {
@@ -466,6 +577,8 @@ int main(int argc, char **argv) {
                     auto res = f->metric_compatible ? global->query(targets, work_budget, stats)
                                                     : GlobalResult{{}, "metric_incompatible", "", {}};
                     action_status = res.status;
+                    if (search) search->targets.feedback(res.attempted,res,res.model ? coverage.gain(f->evaluate(*res.model)).covered : 0,
+                                                         budget.elapsed());
                     if (res.model) {
                         ++solver_candidates;
                         solver_unique += !emitted.count(f->key(*res.model));
@@ -511,9 +624,11 @@ int main(int argc, char **argv) {
                     result.emitted_new_coverage = round_feedback.coverage;
                     result.emitted_new_observations = round_feedback.observations;
                     result.emitted_samples = count - before_count;
-                    result.generated_candidates = stats.counts["local_candidates"] - before_candidates + solver_candidates;
-                    result.unique_valid_candidates = result.generated_candidates - solver_candidates + solver_unique -
-                        (stats.counts["duplicate_candidate_assignment"] - before_duplicates);
+                    result.generated_candidates = (search ? stats.counts["candidate_attempts"] - before_attempts :
+                        stats.counts["local_candidates"] - before_candidates) + solver_candidates;
+                    result.unique_valid_candidates = (search ? stats.counts["unique_candidates_scored"] - before_unique :
+                        stats.counts["local_candidates"] - before_candidates -
+                        (stats.counts["duplicate_candidate_assignment"] - before_duplicates)) + solver_unique;
                     result.status = result.emitted_new_coverage ? "gain" : result.emitted_samples ? "zero_gain_output" : action_status;
                     scheduler.feedback(*selection, result, budget.elapsed());
                     auto name = action_name(result.kind);
@@ -566,6 +681,10 @@ int main(int argc, char **argv) {
                     values << v << ' ';
                 values << '\n';
                 std::ofstream(out / "model.json") << f->model_json(current) << '\n';
+            }
+            if (search && !search->last_failure.empty()) {
+                std::ofstream(out / "search_context.json") << search->last_failure << '\n';
+                std::ofstream(out / "candidate.json") << f->model_json(search->last_candidate) << '\n';
             }
             if (global)
                 std::ofstream(out / "query.smt2") << global->query_smt2();
