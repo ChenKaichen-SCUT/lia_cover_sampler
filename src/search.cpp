@@ -306,8 +306,13 @@ CandidateBatch Search::safe_eager(const Assignment &seed, const Coverage &covera
     std::vector<std::vector<Interval>> ranges;
     for (const auto &direction : dirs) {
         if (budget.done()) break;
-        goals.push_back(options.matching ? targets.select(coverage, rng, 32, budget, &direction.delta) :
-                                          active_targets(f, coverage, rng, 32));
+        auto alpha=[&](int node)->std::optional<Z> {
+            try {return region.linear(node,false).dot(direction.delta);}
+            catch(const std::domain_error &) {return {};}
+        };
+        goals.push_back(options.matching ? (options.directional_targets ?
+            targets.related(coverage,direction.delta,rng,32,budget,stats,alpha) :
+            targets.select(coverage,rng,32,budget,&direction.delta)) : active_targets(f,coverage,rng,32));
         ranges.push_back(without_zero(region.interval(seed, direction.delta)));
         if (ranges.back().empty()) ++stats.counts["interval_only_current_point"];
     }
@@ -416,8 +421,13 @@ CandidateBatch Search::line_eager(const Assignment &seed, const Coverage &covera
         }
         stats.counts["line_nonzero_components"]+=feasible.domain.without(0).intervals.size();
         domains.push_back(feasible.domain);
-        goals.push_back(options.matching ? targets.select(coverage,rng,32,budget,&direction.delta) :
-                                          active_targets(f,coverage,rng,32));
+        auto alpha=[&](int node)->std::optional<Z> {
+            try {return syntax->linear(node,budget).dot(direction.delta);}
+            catch(const LineFailure &) {return {};}
+        };
+        goals.push_back(options.matching ? (options.directional_targets ?
+            targets.related(coverage,direction.delta,rng,32,budget,stats,alpha) :
+            targets.select(coverage,rng,32,budget,&direction.delta)) : active_targets(f,coverage,rng,32));
         analyzers.push_back(std::move(analyzer));
     }
     auto seed_observation=f.evaluate(seed);
@@ -524,13 +534,23 @@ PolishResult Search::polish_candidate(const Assignment &seed, const Coverage &co
         ++result.attempted_steps;++stats.counts["polish_attempted_steps"];
         const auto before_step=stats.counts["unique_candidates_scored"];
         CandidateLimits limit;limit.candidates=step_candidates;
+        const double offset=std::chrono::duration<double>(Clock::now()-begin).count();
         auto proposal=safe(result.model,committed,safe_budget,rng,stats,{},already_emitted,limit);
+        auto latency=[&](const CandidateBatch &batch,double origin) {
+            if(batch.first_valid_seconds>=0 && result.first_valid_seconds<0)
+                result.first_valid_seconds=origin+batch.first_valid_seconds;
+            if(batch.first_positive_seconds>=0 && result.first_positive_seconds<0)
+                result.first_positive_seconds=origin+batch.first_positive_seconds;
+        };
+        latency(proposal,offset);
         std::string module="local_safe";
         auto step_used=stats.counts["unique_candidates_scored"]-before_step;
         if((!proposal.model || !better(proposal.gain,result.after)) && options.line && line_supported &&
            !step.done() && step_used<step_candidates) {
             limit.candidates=step_candidates-step_used;
+            double line_offset=std::chrono::duration<double>(Clock::now()-begin).count();
             auto alternate=line(result.model,committed,step,rng,stats,{},already_emitted,limit);
+            latency(alternate,line_offset);
             if(alternate.model && (!proposal.model || better(alternate.gain,proposal.gain))) {
                 proposal=std::move(alternate);module="local_line";
             }

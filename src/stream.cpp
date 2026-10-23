@@ -212,6 +212,8 @@ CandidateBatch Search::generate(bool line_mode,const Assignment &seed,const Cove
             std::chrono::duration<double>(Clock::now()-preparation_start).count();
         // Complete the first bounded attempt before preparing another direction.
         attempt(directions.size()-1);
+        if(!options.fair) while(!full() && directions.back()->next<directions.back()->goals.size())
+            attempt(directions.size()-1);
         return !full();
     };
     if(options.quotas || line_mode)

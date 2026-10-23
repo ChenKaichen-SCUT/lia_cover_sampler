@@ -50,6 +50,12 @@ class RoundTwoIntegration(unittest.TestCase):
                                      if name.startswith("action_") and name.endswith("_samples")),
                                  len(rows) - 1)
                 self.assertIn("action_seconds", summary["statistics"])
+                wall=summary["wall_timing"]
+                parts=[v for k,v in wall.items() if k not in ("total_wall_seconds","idle_fraction")]
+                self.assertAlmostEqual(sum(parts),wall["total_wall_seconds"],places=6)
+                self.assertEqual(wall["idle_sleep_seconds"],0)
+                self.assertNotIn("action_target_status_",counts)
+                self.assertLessEqual(counts.get("exploration_rebuilds",0),len(rows))
 
     def test_independent_feature_switches(self):
         with tempfile.TemporaryDirectory() as temporary:

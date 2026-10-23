@@ -45,7 +45,7 @@ std::optional<ActionSelection> Scheduler::choose(double now, double remaining,
         return meters[a].last_attempt < meters[b].last_attempt;
     });
     const double credit = .25 + probe_fraction * total_seconds - probe_seconds;
-    bool no_exploit = meters[best].rate() == 0;
+    bool no_exploit = meters[best].rate() == 0 || (bypass && meters[best].failures>=3);
     bool probe = oldest != best && credit >= slice(oldest) &&
                  (meters[oldest].calls == 0 || now - meters[oldest].last_attempt >= .25);
     // When every measured action has zero reward, bounded attempts remain necessary;

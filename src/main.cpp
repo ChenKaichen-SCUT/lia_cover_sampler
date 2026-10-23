@@ -374,6 +374,8 @@ int main(int argc, char **argv) {
             Scheduler scheduler;
             scheduler.work_conserving = opt.work_conserving;
             unsigned round = 0, stalled = 0;
+            bool exploration_exhausted=false;
+            unsigned exhausted_at_count=0;
             double recent_local_gain = 0, recent_local_cost = 0;
             while (count < opt.n && !budget.done()) {
                 wall.enter("scheduler_decision_seconds");
@@ -381,11 +383,17 @@ int main(int argc, char **argv) {
                 round_feedback = {};
                 std::optional<ActionSelection> selection;
                 if (opt.adaptive) {
+                    // An UNSAT blocked context cannot execute useful work again until
+                    // another action supplies new output. Never loop on identical rebuilds.
+                    if(exploration_exhausted && count>exhausted_at_count) {
+                        global->rebuild_exploration(stats);exploration_exhausted=false;
+                        ++stats.counts["exploration_context_reactivated"];
+                    }
                     scheduler.meters[3].cooldown_until = std::max(scheduler.meters[3].cooldown_until,
                                                                global->exploration_budget.cooldown_until);
                     selection = scheduler.choose(budget.elapsed(), budget.left(),
                         {opt.variant != "global-only", search && opt.search.line && search->line_supported,
-                         f->metric_compatible, true},
+                         f->metric_compatible, !opt.work_conserving || !exploration_exhausted},
                         global->target_budget.requested_timeout_ms, global->exploration_budget.requested_timeout_ms);
                     stats.counts["soft_cooldown_bypasses"]=scheduler.soft_cooldown_bypasses;
                     stats.counts["all_actions_soft_cooled"]=scheduler.all_actions_soft_cooled;
@@ -667,8 +675,13 @@ int main(int argc, char **argv) {
                             accept(current, "exploration");
                         } else if (e.status == "exploration_exhausted") {
                             if (!selection) { status = e.status; break; }
-                            global->rebuild_exploration(stats);
-                            scheduler.meters[3].cooldown_until = budget.elapsed() + 1;
+                            if(opt.work_conserving) {
+                                exploration_exhausted=true;exhausted_at_count=count;
+                                ++stats.counts["exploration_context_hard_unavailable"];
+                            } else {
+                                global->rebuild_exploration(stats);
+                                scheduler.meters[3].cooldown_until = budget.elapsed() + 1;
+                            }
                         } else if (!seed_bank.empty())
                             current = seed_bank[rng() % seed_bank.size()];
                 }

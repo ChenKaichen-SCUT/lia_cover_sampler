@@ -41,3 +41,6 @@ add_test(NAME line COMMAND line_test)
 add_executable(repair_test tests/repair_test.cpp)
 target_link_libraries(repair_test PRIVATE lia_core)
 add_test(NAME repair COMMAND repair_test)
+
+add_executable(snapshot_probe src/snapshot_probe.cpp)
+target_link_libraries(snapshot_probe PRIVATE lia_core)

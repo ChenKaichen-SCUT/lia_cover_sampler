@@ -74,6 +74,7 @@ struct PolishResult {
     uint64_t retained = 0, added = 0, lost = 0, moves = 0;
     double seconds = 0;
     unsigned attempted_steps = 0;
+    double first_valid_seconds = -1, first_positive_seconds = -1;
     std::vector<unsigned> candidates_per_step;
     std::vector<std::string> modules;
 };
