@@ -8,13 +8,15 @@ from check_diagnostic_witnesses import verify_file
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--probe',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
-    p.add_argument('--jobs',type=int,default=12);a=p.parse_args();a.output=a.output.resolve();a.output.mkdir(parents=True,exist_ok=False)
-    a.probe=a.probe.resolve();snapshots=ROOT/'results/round3_snapshots/states/manifest.json'
+    p.add_argument('--jobs',type=int,default=12)
+    p.add_argument('--snapshot-manifest',type=Path,default=ROOT/'results/round3_snapshots/states/manifest.json')
+    p.add_argument('--seeds',default='0,1,2');a=p.parse_args();a.output=a.output.resolve();a.output.mkdir(parents=True,exist_ok=False)
+    a.probe=a.probe.resolve();snapshots=a.snapshot_manifest.resolve()
     configs={n:dict(binary=str(a.probe),binary_sha256=digest(a.probe),mode=mode,step_candidates=4)
         for n,mode in [('off','diagnostic_off'),('counters','new'),('trace','diagnostic')]}
     write(a.output/'configs.json',configs)
     command=[sys.executable,str(ROOT/'scripts/run_iteration.py'),'--stage','micro','--configs',str(a.output/'configs.json'),
-        '--snapshot-manifest',str(snapshots),'--output',str(a.output/'replay'),'--seconds','.06','--jobs',str(a.jobs),'--seeds','0,1,2']
+        '--snapshot-manifest',str(snapshots),'--output',str(a.output/'replay'),'--seconds','.06','--jobs',str(a.jobs),'--seeds',a.seeds]
     with (a.output/'replay.log').open('w') as log:subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True)
     manifest=json.loads(snapshots.read_text());lookup={s['id']:s for s in manifest['snapshots']}
     rows=[json.loads(s) for s in (a.output/'replay/runs.jsonl').read_text().splitlines()]
@@ -67,6 +69,7 @@ def main():
     write(a.output/'budget_followups.json',followups)
     write(a.output/'COMPLETE.json',dict(runs=len(rows),all_returned_models_audited=True,scoped_checks=len(checks),unknown=sum(c['result']=='unknown' for c in checks),
         source_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),probe_sha256=digest(a.probe),
+        snapshot_manifest=str(snapshots),snapshot_manifest_sha256=digest(snapshots),seeds=a.seeds,
         scope='Replay of existing development snapshots; never recovered original per-call history',
         cost_accounting='replay/analysis.json contains process CPU, wall and independent coverage audit CPU; one-parameter checks and followups separately timed'))
     print('diagnosis complete',len(rows),'replays',len(checks),'independent scoped checks',flush=True)

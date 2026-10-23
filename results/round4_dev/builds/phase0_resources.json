@@ -1,0 +1,63 @@
+{
+  "all_passed": true,
+  "runs": [
+    {
+      "mode": "release",
+      "kind": "cpp",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build",
+        "--output-on-failure"
+      ],
+      "returncode": 0,
+      "wall_seconds": 0.26648875791579485,
+      "cpu_seconds": 0.218001
+    },
+    {
+      "mode": "release",
+      "kind": "python",
+      "command": [
+        "/tmp/lia-highdiv-frozen/venv/bin/python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "returncode": 0,
+      "wall_seconds": 6.032418707152829,
+      "cpu_seconds": 5.849714
+    },
+    {
+      "mode": "sanitize",
+      "kind": "cpp",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/sanitize",
+        "--output-on-failure"
+      ],
+      "returncode": 0,
+      "wall_seconds": 3.3577370629645884,
+      "cpu_seconds": 3.0236850000000004
+    },
+    {
+      "mode": "sanitize",
+      "kind": "python",
+      "command": [
+        "/tmp/lia-highdiv-frozen/venv/bin/python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "returncode": 0,
+      "wall_seconds": 23.355887460988015,
+      "cpu_seconds": 20.892163
+    }
+  ]
+}

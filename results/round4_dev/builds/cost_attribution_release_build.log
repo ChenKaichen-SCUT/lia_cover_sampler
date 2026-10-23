@@ -1,0 +1,69 @@
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /mnt/Space0/SMT_Sampling/lia_cover_sampler/build
+Consolidate compiler generated dependencies of target math_probe
+[  5%] Built target math_probe
+Consolidate compiler generated dependencies of target frozen_ab_core
+[ 17%] Built target frozen_ab_core
+Consolidate compiler generated dependencies of target lia_core
+[ 25%] Building CXX object CMakeFiles/lia_core.dir/src/core.cpp.o
+[ 25%] Building CXX object CMakeFiles/lia_core.dir/src/global.cpp.o
+[ 25%] Building CXX object CMakeFiles/lia_core.dir/src/local.cpp.o
+[ 27%] Building CXX object CMakeFiles/lia_core.dir/src/control.cpp.o
+[ 30%] Building CXX object CMakeFiles/lia_core.dir/src/scheduler.cpp.o
+[ 32%] Building CXX object CMakeFiles/lia_core.dir/src/search.cpp.o
+[ 35%] Building CXX object CMakeFiles/lia_core.dir/src/line.cpp.o
+[ 37%] Building CXX object CMakeFiles/lia_core.dir/src/stream.cpp.o
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/global.cpp: In member function ‘lia::GlobalResult lia::Global::query(const std::vector<lia::Target>&, lia::Budget&, lia::Stats&, unsigned int, bool)’:
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/global.cpp:100:63: warning: missing initializer for member ‘lia::GlobalResult::attempted’ [-Wmissing-field-initializers]
+  100 |         return {{}, "no_target", "", {}, SolveStatus::NoTarget};
+      |                                                               ^
+[ 40%] Linking CXX static library liblia_core.a
+[ 40%] Built target lia_core
+Consolidate compiler generated dependencies of target output_refiner
+Consolidate compiler generated dependencies of target snapshot_probe
+Consolidate compiler generated dependencies of target repair_test
+Consolidate compiler generated dependencies of target search_test
+Consolidate compiler generated dependencies of target diagnostic_test
+Consolidate compiler generated dependencies of target line_test
+Consolidate compiler generated dependencies of target core_test
+Consolidate compiler generated dependencies of target lia_cover_sampler
+[ 45%] Building CXX object CMakeFiles/repair_test.dir/tests/repair_test.cpp.o
+[ 47%] Building CXX object CMakeFiles/snapshot_probe.dir/src/snapshot_probe.cpp.o
+[ 47%] Building CXX object CMakeFiles/output_refiner.dir/src/output_refiner.cpp.o
+[ 50%] Building CXX object CMakeFiles/search_test.dir/tests/search_test.cpp.o
+[ 55%] Building CXX object CMakeFiles/diagnostic_test.dir/tests/diagnostic_test.cpp.o
+[ 57%] Building CXX object CMakeFiles/line_test.dir/tests/line_test.cpp.o
+[ 57%] Building CXX object CMakeFiles/core_test.dir/tests/core_test.cpp.o
+[ 60%] Building CXX object CMakeFiles/lia_cover_sampler.dir/src/main.cpp.o
+[ 62%] Linking CXX static library liboutput_refiner.a
+[ 65%] Linking CXX executable repair_test
+[ 65%] Built target output_refiner
+[ 67%] Linking CXX executable snapshot_probe
+[ 67%] Built target repair_test
+Consolidate compiler generated dependencies of target ab_replay
+Consolidate compiler generated dependencies of target preservation_test
+Consolidate compiler generated dependencies of target ab_gate_test
+Consolidate compiler generated dependencies of target ab_sampler
+[ 77%] Building CXX object CMakeFiles/ab_sampler.dir/src/ab_adapter.cpp.o
+[ 77%] Building CXX object CMakeFiles/ab_replay.dir/src/ab_replay.cpp.o
+[ 77%] Building CXX object CMakeFiles/preservation_test.dir/tests/preservation_test.cpp.o
+[ 77%] Linking CXX executable ab_gate_test
+[ 80%] Linking CXX executable line_test
+[ 80%] Built target snapshot_probe
+[ 82%] Built target ab_gate_test
+[ 85%] Linking CXX executable diagnostic_test
+[ 85%] Built target line_test
+[ 87%] Linking CXX executable search_test
+[ 90%] Linking CXX executable core_test
+[ 90%] Built target diagnostic_test
+[ 90%] Built target core_test
+[ 90%] Built target search_test
+[ 92%] Linking CXX executable preservation_test
+[ 92%] Built target preservation_test
+[ 95%] Linking CXX executable lia_cover_sampler
+[ 97%] Linking CXX executable ab_replay
+[ 97%] Built target lia_cover_sampler
+[ 97%] Built target ab_replay
+[100%] Linking CXX executable ab_sampler
+[100%] Built target ab_sampler

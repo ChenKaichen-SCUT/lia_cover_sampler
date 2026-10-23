@@ -1,0 +1,110 @@
+{
+  "passed": true,
+  "code_path_stop_only": true,
+  "references": [
+    {
+      "line": 153,
+      "text": "if (formal.count >= opt.n || budget.done())",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "line": 199,
+      "text": "if (opt.n) {",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "line": 244,
+      "text": "while (formal.count < opt.n && !budget.done()) {",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "line": 435,
+      "text": "if (formal.count >= opt.n || budget.done())",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "line": 478,
+      "text": "status = formal.count >= opt.n ? \"sample_limit\" : interrupted ? \"interrupted\" : \"time_limit\";",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "line": 483,
+      "text": "summary << \"{\\\"status\\\":\" << quote(status) << \",\\\"samples\\\":\" << formal.count << \",\\\"requested\\\":\" << opt.n",
+      "classification": "termination_or_metadata"
+    },
+    {
+      "line": 503,
+      "text": "<< \",\\\"samples\\\":\" << opt.n << \",\\\"z3\\\":\" << quote(Z3_get_full_version())",
+      "classification": "termination_or_metadata"
+    }
+  ],
+  "source_hashes": {
+    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/ab_adapter.cpp": "4e8e141568c9a7be423cbfd57ad3c223eb34a689b1ea6cf1218dfc850e984354",
+    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/include/ab_output.hpp": "2fb804fe5c4396d7864afacfadd6a3cb37ed818b5e5fc77b8b323194cfb181f3"
+  },
+  "binary_sha256": "77394226140c55743eb27937548c2238e0f0dcaa783995a8bf7e620099157518",
+  "trials": [
+    {
+      "polish": false,
+      "seed": 0,
+      "counts": [
+        8,
+        8
+      ],
+      "leading_identical": 8,
+      "full_common_prefix_equal": true
+    },
+    {
+      "polish": false,
+      "seed": 1,
+      "counts": [
+        8,
+        8
+      ],
+      "leading_identical": 8,
+      "full_common_prefix_equal": true
+    },
+    {
+      "polish": false,
+      "seed": 2,
+      "counts": [
+        8,
+        8
+      ],
+      "leading_identical": 8,
+      "full_common_prefix_equal": true
+    },
+    {
+      "polish": true,
+      "seed": 0,
+      "counts": [
+        7,
+        7
+      ],
+      "leading_identical": 7,
+      "full_common_prefix_equal": true
+    },
+    {
+      "polish": true,
+      "seed": 1,
+      "counts": [
+        7,
+        7
+      ],
+      "leading_identical": 7,
+      "full_common_prefix_equal": true
+    },
+    {
+      "polish": true,
+      "seed": 2,
+      "counts": [
+        7,
+        7
+      ],
+      "leading_identical": 7,
+      "full_common_prefix_equal": true
+    }
+  ],
+  "wall_seconds": 0.5113567190710455,
+  "protocol": "actual online time trajectory and unreordered formal unique prefixes; raw generation count is separate; real wall budgets may cause independent repetitions to diverge"
+}

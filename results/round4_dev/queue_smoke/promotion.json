@@ -1,0 +1,38 @@
+{
+  "approved": false,
+  "checks": {
+    "endpoint_mean_nonnegative": true,
+    "endpoint_median_nonnegative": true,
+    "positive_on_two_development_cases": false,
+    "two_thirds_seed_pairs_nonnegative": true,
+    "formal_screen_protocol": false,
+    "mechanism_audits_passed": true,
+    "output_state_isolation_and_preservation": true,
+    "replacements_actually_accepted": true,
+    "observed_extra_cost_within_allowance": true,
+    "all_output_transactions_accounted": true,
+    "prefix_10_mean_nonnegative": true,
+    "prefix_50_mean_nonnegative": true
+  },
+  "automatic_long_runs": false,
+  "decision": "Stop: failed predeclared screen gates",
+  "analysis_sha256": "756eaa15b4cb2e4d44171ab09bfc8324b6da04e276376e68b7e5377fba5859ae",
+  "configurations": {
+    "ab_reference": {
+      "binary": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/ab_sampler",
+      "args": [
+        "--output-polish",
+        "false"
+      ],
+      "binary_sha256": "ed5accd9f84cf67f90d1027f99d9a6c2ec12b10d35adf4d7cf564810384251c9"
+    },
+    "ab_polish": {
+      "binary": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/ab_sampler",
+      "args": [
+        "--output-polish",
+        "true"
+      ],
+      "binary_sha256": "ed5accd9f84cf67f90d1027f99d9a6c2ec12b10d35adf4d7cf564810384251c9"
+    }
+  }
+}
