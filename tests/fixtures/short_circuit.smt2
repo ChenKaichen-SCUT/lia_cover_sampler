@@ -1,0 +1,6 @@
+(declare-const x Int)
+(declare-const y Int)
+(declare-const b Bool)
+(assert (and (or b (= x 0) (= (+ x y) 4))
+             (>= (ite b (+ x y) (- y)) (- 100))
+             (or (and (>= x 0) (<= x 100)) (and (< x 0) (= y 1)))))

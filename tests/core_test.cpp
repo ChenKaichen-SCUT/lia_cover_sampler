@@ -1,0 +1,184 @@
+#include "core.hpp"
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+
+using namespace lia;
+void check(bool v, const char *m) {
+    if (!v)
+        throw std::runtime_error(m);
+}
+std::string fixture(const std::string &text) {
+    static unsigned id = 0;
+    auto p = std::filesystem::temp_directory_path() / ("lia-core-" + std::to_string(++id) + ".smt2");
+    std::ofstream(p) << text;
+    return p.string();
+}
+void region_case(const std::string &text) {
+    auto path = fixture(text);
+    Formula f(path);
+    z3::solver s(f.ctx);
+    s.add(f.root);
+    check(s.check() == z3::sat, "fixture SAT");
+    auto m = f.complete(s.get_model());
+    auto o = f.evaluate(m);
+    Budget budget;
+    budget.seconds = 5;
+    Region r(f, m, o, budget);
+    check(r.supported, "region supported");
+    check(r.contains(m), "region seed");
+    z3::solver proof(f.ctx);
+    proof.add(r.expression() && !f.root);
+    check(proof.check() == z3::unsat, "P implies F");
+    std::mt19937_64 rng(10);
+    Stats stats;
+    auto dirs = directions(r, rng, stats);
+    for (auto &d : dirs) {
+        check(r.kernel(d), "full kernel");
+        auto interval = r.interval(m, d);
+        check(interval.contains(0), "origin interval");
+        for (int z = -4; z <= 4; ++z)
+            if (interval.contains(z)) {
+                auto a = m;
+                for (size_t i = 0; i < a.size(); ++i)
+                    a[i] += z * d[i];
+                check(f.validate(a), "direction model valid");
+            }
+    }
+    std::filesystem::remove(path);
+}
+int main() {
+    try {
+        Interval interval;
+        interval.constrain(-1, 0);
+        interval.constrain(1, 5);
+        check(interval.lo && *interval.lo == 0 && interval.hi && *interval.hi == 5, "interval [0,5]");
+        std::vector<std::string> forms = {
+            "(declare-const x Int)(declare-const y Int)(assert (= (+ x (* 2 y)) 10))(assert (and (<= 0 y) "
+            "(<= y 5)))",
+            "(declare-const x Int)(declare-const y Int)(declare-const z Int)(assert (= (+ x (* 2 y) z) "
+            "10))(assert (= (+ (* 3 x) y) 7))(assert (< y 100))",
+            "(declare-const x Int)(declare-const y Int)(assert (and (> x -10) (< x 20) (not (= y 2)) (>= y "
+            "-7)))",
+            "(declare-const x Int)(assert (= x 987654321098765432109876543210))",
+            "(declare-const x Int)(declare-const b Bool)(assert (or (and b (< x -1)) (and (not b) (>= x "
+            "3))))",
+            "(declare-const x Int)(declare-const y Int)(assert (= (ite (> x 0) (+ x 1) (- x)) y))",
+            "(declare-const x Int)(declare-const y Int)(declare-const z Int)(assert (distinct x y z))",
+            "(declare-const x Int)(declare-const y Int)(declare-const z Int)(assert (not (distinct x y z)))",
+            "(declare-const b Bool)(declare-const c Bool)(assert (xor b c))",
+            "(declare-const b Bool)(declare-const c Bool)(assert (=> b c))",
+            "(declare-const x Int)(assert (not (or (< x 0) (>= x 9))))",
+            "(declare-const x Int)(assert (not (and (< x 0) (>= x 9))))"};
+        for (auto &text : forms)
+            region_case(text);
+        {
+            Formula f(fixture(forms[0]));
+            Assignment m{0, 5}, d{2, -1};
+            Budget budget;
+            auto o = f.evaluate(m);
+            Region r(f, m, o, budget);
+            auto i = r.interval(m, d);
+            check(i.lo && *i.lo == 0 && i.hi && *i.hi == 5, "specified equality interval");
+            check(!r.kernel(Assignment{1, 0}), "reject partial kernel");
+        }
+        {
+            Formula f(fixture("(declare-const x Int)(assert (or (= x 0) (= x 1)))"));
+            Budget budget;
+            Assignment m{0};
+            auto o = f.evaluate(m);
+            Region r(f, m, o, budget);
+            check(!r.contains(Assignment{1}), "local excludes second model");
+            int x = f.variables[0];
+            Global global(f, 0);
+            Stats stats;
+            auto res = global.query({Target{x, 0, true}}, budget, stats);
+            check(res.model && (*res.model)[0] == 1, "global reaches other local region");
+            check(global.conflicts.cores.empty(), "local failure did not poison global cache");
+            Coverage cov(f);
+            cov.accept(o);
+            auto before = cov.json();
+            auto candidate = f.evaluate(Assignment{1});
+            cov.gain(candidate);
+            check(before == cov.json(), "discarded candidate does not update coverage");
+        }
+        {
+            Formula f(fixture("(declare-const x Int)(declare-const y Int)(declare-const z Int)(assert (and "
+                              "(<= 0 x) (<= x 1) (<= 0 y) (<= y 1) (<= 0 z) (<= z 1) (<= (+ x y z) 2)))"));
+            Global global(f, 0);
+            Budget budget;
+            Stats stats;
+            global.pack_size = 3;
+            std::vector<Target> goals;
+            for (int n : f.variables)
+                goals.push_back({n, 0, true});
+            auto r = global.query(goals, budget, stats);
+            check(r.status == "unsat" && r.core.size() == 3, "ternary core");
+            check(global.conflicts.cores.size() == 1, "core persisted");
+            for (int drop = 0; drop < 3; ++drop) {
+                auto p = goals;
+                p.erase(p.begin() + drop);
+                global.pack_size = 2;
+                auto sat = global.query(p, budget, stats);
+                check(sat.status == "sat", "pair not blocked by ternary core");
+            }
+            auto e = global.explore(Assignment{0, 0, 0}, budget, stats);
+            check(e.status == "sat", "explore SAT");
+            check(global.conflicts.cores.size() == 1, "exploration isolated");
+            global.validate_conflicts(Assignment{1, 1, 0});
+            global.conflicts.insert({0}); // Deliberately corrupt the cache.
+            bool caught = false;
+            try {
+                global.validate_conflicts(Assignment{1, 0, 0});
+            } catch (const std::logic_error &) {
+                caught = true;
+            }
+            check(caught, "detect cache rejecting a known satisfiable combination");
+        }
+        {
+            Formula f(fixture("(declare-const x Int)(assert (> x 0))"));
+            Global global(f, 0, 1);
+            Budget budget;
+            Stats stats;
+            auto r = global.query({Target{f.variables[0], 63, true}}, budget, stats);
+            check(r.status == "unknown" || r.status == "resource_exhausted" || r.status == "cancelled",
+                  ("resource exhaustion is not UNSAT: " + r.status + " " + r.detail).c_str());
+            check(global.conflicts.cores.empty(), "unknown does not create conflicts");
+            check(global.timeout_ms > 50, "unknown increases retry budget");
+        }
+        {
+            Formula f(fixture("(declare-const x Int)(assert (= (mod x 3) 0))"));
+            Budget budget;
+            Assignment m{0};
+            auto o = f.evaluate(m);
+            Region r(f, m, o, budget);
+            check(!r.supported && !f.metric_compatible, "unsupported local/evaluator distinguished");
+            check(f.validate(m), "unsupported local does not mean UNSAT");
+        }
+        {
+            Formula f(fixture("(declare-const x Int)(declare-const b Bool)"
+                              "(assert (and (or b (= x 0)) (>= (ite b x (- x)) -5)))"));
+            for (int b = 0; b <= 1; ++b)
+                for (int x = -2; x <= 2; ++x) {
+                    Assignment model{b, x};
+                    if (!f.validate(model))
+                        continue;
+                    auto observed = f.evaluate(model);
+                    auto zmodel = f.as_model(model);
+                    for (size_t i = 0; i < f.nodes.size(); ++i)
+                        check(zmodel.eval(f.reach(i), true).is_true() == bool(observed.visited[i]),
+                              "Reach agrees with lazy evaluator on shared paths");
+                    Budget budget;
+                    Region r(f, model, observed, budget);
+                    z3::solver proof(f.ctx);
+                    proof.add(r.expression() && !f.root);
+                    check(proof.check() == z3::unsat, "branch-dependent regions imply F");
+                }
+        }
+        std::cout << "core tests passed\n";
+        return 0;
+    } catch (const std::exception &e) {
+        std::cerr << e.what() << '\n';
+        return 1;
+    }
+}
