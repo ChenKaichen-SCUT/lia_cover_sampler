@@ -177,6 +177,27 @@ int main() {
             });
             check(!rejected.best && rejected.late, "late checkpoint rejected");
         }
+        {
+            Formula f(file("(declare-const x Int)(declare-const y Int)(assert (and (or (= x 0)(= x 1))(>= y "
+                           "(- 100))(<= y 100)))"));
+            Budget b;
+            b.seconds = 2;
+            ChoiceCatalog cat(f, b);
+            cat.commit({0, -1});
+            cat.commit({1, 0});
+            cat.commit({1, 1});
+            MacroChoiceGenerator g(f, cat, 0);
+            Global global(f, 0);
+            OnlineCoverage online(f);
+            online.restore({{0, -1}, {1, 0}}, {1, 1});
+            Stats stats;
+            auto r = g.generate(true, global, online, {1, 1}, b, stats, {});
+            check(r.best && r.macro_calls == 1 && r.best->origin == "macro_choice" &&
+                      r.best->gain.covered == 0,
+                  "actual scoped macro SAT can be legal distinct and zero gain");
+            check(f.validate(r.best->model) && !online.duplicate(r.best->model),
+                  "zero gain macro witness remains valid and distinct");
+        }
         std::cout << "macro tests passed\n";
         return 0;
     } catch (const std::exception &e) {

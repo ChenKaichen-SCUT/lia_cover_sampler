@@ -11,6 +11,16 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(r['known_missing_bits'],1);self.assertEqual((r['witness_bit'],r['witness_value']),(2,1));self.assertEqual(r['witness_index'],7)
     def test_no_known_gap_is_unknown_not_saturated(self):
         self.assertEqual(diagnose([[1,1]],[[1,1]],{})['reachability'],'REACHABILITY_UNKNOWN')
+    def test_zero_gain_seed_creates_known_gap(self):
+        with no_search():
+            metric=FrozenCoverage('(declare-const x Int)(assert (and (<= 0 x)(<= x 1)))')
+            zero=[dict(name='x',sort='Int',value='0')];one=[dict(name='x',sort='Int',value='1')]
+            seeded=metric.apply(metric.empty,zero);reference=metric.apply(seeded,one)
+            self.assertEqual(metric.count(seeded),0)
+            def export(s):return [list(map(int,x)) for x in metric.export(s)['states']]
+            refs=export(reference);w={i:[dict(mode='saved',index=2,model_hash='one',zero=str(z),one=str(o))] for i,(z,o) in enumerate(refs)}
+            self.assertEqual(diagnose(export(metric.empty),refs,w)['reachability'],'REACHABILITY_UNKNOWN')
+            self.assertEqual(diagnose(export(seeded),refs,w)['reachability'],'PLATEAU_WITH_KNOWN_REACHABLE_GAP')
     def test_saved_early_partition_identity(self):
         p=ROOT/'results/round8_analysis/early_samples.csv'
         if not p.exists():self.skipTest('saved analysis unavailable')
