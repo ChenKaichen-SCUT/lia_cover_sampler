@@ -1,11 +1,20 @@
 #pragma once
 #include "residual_coverage.hpp"
 namespace lia {
+struct AlternativeAttemptState {
+    uint64_t attempts = 0, sat_count = 0, timeout_like_count = 0, unknown_count = 0;
+    double cumulative_seconds = 0;
+    unsigned retry_level = 0, completed_levels = 0, clipped_attempts = 0;
+    uint64_t last_attempt_order = 0, eligible_after_order = 0;
+    bool retired = false;
+    std::string json() const;
+};
 struct ChoiceAlternative {
     int node;
     std::map<int, Z> assignments;
     uint64_t visits = 0;
     bool impossible = false;
+    AlternativeAttemptState attempt;
 };
 struct ChoiceGroup {
     int node;
@@ -41,7 +50,8 @@ class MacroChoiceGenerator {
     Formula &f;
     z3::solver solver;
     std::mt19937_64 rng;
-    SolveBudgetState adaptive;
+    uint64_t attempt_order = 0;
+    unsigned new_since_retry = 0;
 
   public:
     ChoiceCatalog &catalog;
@@ -49,7 +59,10 @@ class MacroChoiceGenerator {
     std::function<std::optional<GlobalResult>(unsigned)> query_override;
     unsigned calls_seen = 0;
     std::function<std::optional<GlobalResult>(unsigned)> timed_query_override;
-    bool allow_combo = false;
+    bool allow_combo = false, fair_retry = true;
+    std::string selected_queue;
+    std::optional<std::pair<unsigned, unsigned>> select(const Assignment &);
+    void fallback_opportunity() { ++attempt_order; }
     MacroChoiceGenerator(Formula &, ChoiceCatalog &, unsigned);
     GlobalResult query_choices(const std::vector<std::pair<unsigned, unsigned>> &, Budget &, Stats &,
                                unsigned requested_ms = 0);

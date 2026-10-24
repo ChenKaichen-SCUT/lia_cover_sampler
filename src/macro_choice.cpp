@@ -59,7 +59,7 @@ ChoiceCatalog::ChoiceCatalog(Formula &formula, Budget &budget) : f(formula) {
         group.node = n;
         bool supported = true;
         for (int alt : children) {
-            ChoiceAlternative a{alt, {}, 0, false};
+            ChoiceAlternative a{alt, {}, 0, false, {}};
             std::vector<int> pending{alt};
             while (!pending.empty() && supported) {
                 if (!tick()) {
@@ -233,7 +233,8 @@ std::string ChoiceCatalog::json() const {
             if (j)
                 o << ',';
             auto &a = g.alternatives[j];
-            o << "{\"node\":" << a.node << ",\"visits\":" << a.visits << ",\"assignments\":[";
+            o << "{\"node\":" << a.node << ",\"visits\":" << a.visits << ",\"attempt\":" << a.attempt.json()
+              << ",\"impossible\":" << (a.impossible ? "true" : "false") << ",\"assignments\":[";
             bool af = true;
             for (auto &[v, z] : a.assignments) {
                 if (!af)
@@ -251,6 +252,68 @@ std::string ChoiceCatalog::json() const {
 }
 } // namespace lia
 namespace lia {
+std::string AlternativeAttemptState::json() const {
+    std::ostringstream o;
+    o << std::setprecision(17) << "{\"attempts\":" << attempts << ",\"sat_count\":" << sat_count
+      << ",\"timeout_like_count\":" << timeout_like_count << ",\"unknown_count\":" << unknown_count
+      << ",\"cumulative_seconds\":" << cumulative_seconds << ",\"retry_level\":" << retry_level
+      << ",\"completed_levels\":" << completed_levels << ",\"clipped_attempts\":" << clipped_attempts
+      << ",\"last_attempt_order\":" << last_attempt_order
+      << ",\"eligible_after_order\":" << eligible_after_order
+      << ",\"retired\":" << (retired ? "true" : "false") << '}';
+    return o.str();
+}
+std::optional<std::pair<unsigned, unsigned>> MacroChoiceGenerator::select(const Assignment &current) {
+    std::vector<std::pair<unsigned, unsigned>> fresh, retry, legacy;
+    for (unsigned g = 0; g < catalog.groups.size(); ++g) {
+        auto satisfied = catalog.satisfied(catalog.groups[g], current);
+        for (unsigned a = 0; a < catalog.groups[g].alternatives.size(); ++a) {
+            auto &alt = catalog.groups[g].alternatives[a];
+            auto &s = alt.attempt;
+            if (alt.impossible || s.retired || s.attempts >= 6 || s.sat_count ||
+                std::find(satisfied.begin(), satisfied.end(), a) != satisfied.end())
+                continue;
+            // The ablation retains old ranking. Fair retry also defers one other opportunity.
+            legacy.emplace_back(g, a);
+            if (!s.attempts)
+                fresh.emplace_back(g, a);
+            else if (attempt_order >= s.eligible_after_order &&
+                     (s.timeout_like_count || s.unknown_count == 1))
+                retry.emplace_back(g, a);
+        }
+    }
+    auto rank = [&](auto &v, bool retries) {
+        std::shuffle(v.begin(), v.end(), rng);
+        std::stable_sort(v.begin(), v.end(), [&](auto x, auto y) {
+            auto &gx = catalog.groups[x.first], &gy = catalog.groups[y.first];
+            auto &ax = gx.alternatives[x.second], &ay = gy.alternatives[y.second];
+            if (retries && ax.attempt.last_attempt_order != ay.attempt.last_attempt_order)
+                return ax.attempt.last_attempt_order < ay.attempt.last_attempt_order;
+            return ax.visits != ay.visits ? ax.visits < ay.visits
+                                          : gx.arithmetic_nodes.size() > gy.arithmetic_nodes.size();
+        });
+    };
+    if (!fair_retry) {
+        rank(legacy, false);
+        selected_queue = "legacy_rank";
+        if (legacy.empty())
+            return {};
+        return legacy.front();
+    }
+    bool use_retry = !retry.empty() && (new_since_retry >= 2 || fresh.empty());
+    auto &queue = use_retry ? retry : fresh;
+    if (queue.empty()) {
+        selected_queue = "empty";
+        return {};
+    }
+    rank(queue, use_retry);
+    selected_queue = use_retry ? "retry" : "new";
+    if (use_retry)
+        new_since_retry = 0;
+    else
+        ++new_since_retry;
+    return queue.front();
+}
 MacroChoiceGenerator::MacroChoiceGenerator(Formula &formula, ChoiceCatalog &c, unsigned seed)
     : f(formula), solver(f.ctx, z3::solver::simple()), rng(seed), catalog(c) {
     solver.add(f.root);
@@ -268,6 +331,14 @@ GlobalResult MacroChoiceGenerator::query_choices(const std::vector<std::pair<uns
     }
     solver.push();
     QueryGrant grant;
+    AlternativeAttemptState *attempt =
+        choices.size() == 1 ? &catalog.groups.at(choices[0].first).alternatives.at(choices[0].second).attempt
+                            : nullptr;
+    unsigned level = attempt ? attempt->retry_level : 0;
+    if (requested_ms)
+        for (unsigned i = 0; i < 4; ++i)
+            if (requested_ms == SolveBudgetState::levels[i])
+                level = i;
     try {
         auto construct = Clock::now();
         for (auto [g, a] : choices)
@@ -279,12 +350,12 @@ GlobalResult MacroChoiceGenerator::query_choices(const std::vector<std::pair<uns
             root = root->parent;
         r.session_remaining_before_check = root->left();
         r.action_remaining_before_check = b.left();
-        grant =
-            grant_query(requested_ms ? requested_ms : adaptive.requested_timeout_ms, root->left(), b.left());
+        grant = grant_query(requested_ms ? requested_ms : SolveBudgetState::levels[level], root->left(),
+                            b.left());
         r.requested_timeout_ms = grant.requested_ms;
         r.actual_timeout_ms = grant.granted_ms;
         r.budget_clip_reason = grant.clip_reason;
-        r.retry_level_before = adaptive.retry_level;
+        r.retry_level_before = level;
         if (!grant.granted_ms || b.done()) {
             r.code = interrupted ? SolveStatus::Cancelled : SolveStatus::BudgetExhausted;
             r.status = status_name(r.code);
@@ -345,8 +416,34 @@ GlobalResult MacroChoiceGenerator::query_choices(const std::vector<std::pair<uns
         throw;
     }
     r.elapsed_seconds = std::chrono::duration<double>(Clock::now() - start).count();
-    adaptive.observe(r.exit_decision, r.elapsed_seconds, grant);
-    r.retry_level_after = adaptive.retry_level;
+    ++attempt_order;
+    if (attempt) {
+        ++attempt->attempts;
+        attempt->last_attempt_order = attempt_order;
+        attempt->cumulative_seconds += r.elapsed_seconds;
+        attempt->eligible_after_order = attempt_order + 1;
+        if (r.code == SolveStatus::Sat)
+            ++attempt->sat_count;
+        if (r.code == SolveStatus::Timeout)
+            ++attempt->timeout_like_count;
+        if (r.code == SolveStatus::Unknown)
+            ++attempt->unknown_count;
+        if (!grant.full())
+            ++attempt->clipped_attempts;
+        if (grant.full() &&
+            (r.code == SolveStatus::Sat || r.code == SolveStatus::Unsat || r.code == SolveStatus::Timeout))
+            attempt->completed_levels |= 1U << level;
+        if (r.exit_decision.allow_upgrade && grant.full()) {
+            if (level < 3)
+                attempt->retry_level = level + 1;
+            else
+                attempt->retired = true;
+        }
+        if (attempt->unknown_count >= 2 || attempt->clipped_attempts >= 2 || attempt->attempts >= 6 ||
+            r.code == SolveStatus::ResourceExhausted)
+            attempt->retired = true;
+    }
+    r.retry_level_after = attempt ? attempt->retry_level : level;
     // F + exactly one unblocked alternative is the ONLY global proof scope.
     if (r.code == SolveStatus::Unsat && choices.size() == 1) {
         auto [g, a] = choices[0];
@@ -419,28 +516,25 @@ BroadResult MacroChoiceGenerator::generate(bool structured, Global &global, cons
     BroadResult out;
     Budget work;
     work.start = budget.start;
-    work.seconds = budget.seconds * .8;
+    work.seconds = std::max(0., budget.seconds - .025);
     work.parent = &budget;
-    std::vector<std::pair<unsigned, unsigned>> order;
-    {
-        Timer select(stats, "macro_selection_seconds");
-        if (structured)
-            for (unsigned g = 0; g < catalog.groups.size(); ++g)
-                for (unsigned a = 0; a < catalog.groups[g].alternatives.size(); ++a)
-                    if (!catalog.groups[g].alternatives[a].impossible)
-                        order.emplace_back(g, a);
-        std::shuffle(order.begin(), order.end(), rng);
-        std::stable_sort(order.begin(), order.end(), [&](auto a, auto b) {
-            auto &ga = catalog.groups[a.first], &gb = catalog.groups[b.first];
-            auto va = ga.alternatives[a.second].visits, vb = gb.alternatives[b.second].visits;
-            return va != vb ? va < vb : ga.arithmetic_nodes.size() > gb.arithmetic_nodes.size();
-        });
-    }
-    std::vector<std::pair<unsigned, unsigned>> choices;
-    if (!order.empty())
-        choices.push_back(order.front());
-    bool macro_next = !choices.empty();
+    std::vector<std::pair<unsigned, unsigned>> previous;
     while (out.calls < max_calls && !work.done()) {
+        if (catalog.groups.empty() || !structured)
+            return plain_broad(global, online, current, budget, stats, checkpoint, max_calls);
+        std::optional<std::pair<unsigned, unsigned>> chosen;
+        {
+            Timer selection(stats, "macro_selection_seconds");
+            chosen = select(current);
+        }
+        std::vector<std::pair<unsigned, unsigned>> choices;
+        if (chosen)
+            choices.push_back(*chosen);
+        if (allow_combo && !previous.empty() && chosen && previous[0].first != chosen->first)
+            choices.insert(choices.begin(), previous[0]);
+        bool macro_next = chosen.has_value();
+        std::string before =
+            chosen ? catalog.groups[chosen->first].alternatives[chosen->second].attempt.json() : "null";
         GlobalResult q;
         std::string origin = macro_next ? "macro_choice" : "exploration";
         unsigned forced = 0;
@@ -453,6 +547,7 @@ BroadResult MacroChoiceGenerator::generate(bool structured, Global &global, cons
         } else {
             q = global.explore(current, work, stats, 0xffffffffU, true);
             ++out.fallback_calls;
+            fallback_opportunity();
         }
         ++out.calls;
         std::ostringstream row;
@@ -461,7 +556,11 @@ BroadResult MacroChoiceGenerator::generate(bool structured, Global &global, cons
             << ",\"evidence\":" << q.evidence_json() << ",\"query_seconds\":" << q.elapsed_seconds
             << ",\"completed_seconds\":" << budget.elapsed()
             << ",\"global_single_alternative_proof\":" << (q.global_target_proof ? "true" : "false")
-            << ",\"forced_assignments_changed\":" << forced << ",\"choices\":[";
+            << ",\"forced_assignments_changed\":" << forced
+            << ",\"selection_queue\":" << quote(selected_queue) << ",\"attempt_before\":" << before
+            << ",\"attempt_after\":"
+            << (chosen ? catalog.groups[chosen->first].alternatives[chosen->second].attempt.json() : "null")
+            << ",\"choices\":[";
         if (macro_next)
             for (size_t i = 0; i < choices.size(); ++i) {
                 if (i)
@@ -473,17 +572,8 @@ BroadResult MacroChoiceGenerator::generate(bool structured, Global &global, cons
         assess_broad(out, q, online, budget, stats, origin, checkpoint, &catalog, current);
         if (q.exit_decision.stop)
             break;
-        bool combo = false;
-        if (allow_combo && macro_next && choices.size() == 1 && out.best && q.model) {
-            auto next = std::find_if(order.begin() + 1, order.end(),
-                                     [&](auto c) { return c.first != choices.front().first; });
-            if (next != order.end()) {
-                choices.push_back(*next);
-                combo = true;
-            }
-        }
-        macro_next =
-            combo; // Failed/duplicate/unsupported first attempt uses remaining common calls for fallback.
+        if (macro_next && q.model && out.best)
+            previous = choices;
     }
     out.full_seconds = budget.elapsed();
     return out;
@@ -495,7 +585,8 @@ BroadResult plain_broad(Global &global, const OnlineCoverage &online, const Assi
     BroadResult out;
     Budget work;
     work.start = budget.start;
-    work.seconds = budget.seconds * .8;
+    work.seconds =
+        global.exploration_budget.fixed_levels ? std::max(0., budget.seconds - .025) : budget.seconds * .8;
     work.parent = &budget;
     while (out.calls < max_calls && !work.done()) {
         auto q = global.explore(current, work, stats, 0xffffffffU, true);

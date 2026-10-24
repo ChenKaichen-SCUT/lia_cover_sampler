@@ -132,7 +132,7 @@ int main(int argc, char **argv) {
                 cb.seconds = std::min(.1, session.left());
                 cb.parent = &session;
                 catalog = std::make_unique<ChoiceCatalog>(f, cb);
-                if (!session.done())
+                if (!session.done() && !catalog->groups.empty())
                     macro = std::make_unique<MacroChoiceGenerator>(f, *catalog, rng ^ 0x9e3779b9U);
                 catalog->commit(current);
                 for (auto &m : prefix)
