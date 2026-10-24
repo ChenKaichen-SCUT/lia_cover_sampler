@@ -9,7 +9,7 @@ find_path(Z3_INCLUDE_DIR z3++.h PATHS "${Z3_PREFIX}/include" NO_DEFAULT_PATH REQ
 find_library(Z3_LIBRARY z3 PATHS "${Z3_PREFIX}/lib" NO_DEFAULT_PATH REQUIRED)
 find_library(GMP_LIBRARY gmp REQUIRED)
 find_library(GMPXX_LIBRARY gmpxx REQUIRED)
-add_library(lia_core src/core.cpp src/local.cpp src/global.cpp src/control.cpp src/scheduler.cpp src/search.cpp src/line.cpp src/stream.cpp src/coverage_block_generator.cpp)
+add_library(lia_core src/core.cpp src/local.cpp src/global.cpp src/control.cpp src/scheduler.cpp src/search.cpp src/line.cpp src/stream.cpp src/coverage_block_generator.cpp src/residual_coverage.cpp)
 file(GLOB LIA_SOURCE_FILES CONFIGURE_DEPENDS src/*.cpp include/*.hpp)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${LIA_SOURCE_FILES})
 set(LIA_SOURCE_DIGESTS "")
@@ -86,6 +86,10 @@ target_link_libraries(coverage_block_probe PRIVATE lia_core)
 add_executable(coverage_block_test tests/coverage_block_test.cpp)
 target_link_libraries(coverage_block_test PRIVATE lia_core)
 add_test(NAME coverage_block COMMAND coverage_block_test)
+
+add_executable(residual_state_test tests/residual_state_test.cpp)
+target_link_libraries(residual_state_test PRIVATE lia_core)
+add_test(NAME residual_state COMMAND residual_state_test)
 
 # Optional local regression against the untouched round-four archive. The
 # paired mechanism experiment itself uses one common instrumented executable.

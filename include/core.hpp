@@ -181,6 +181,15 @@ struct GlobalResult {
     std::vector<Target> core_targets;
     std::vector<unsigned> fixed_core;
     bool exclusion_in_core = false, global_target_proof = false;
+    // Separate threshold-query evidence; never a fixed-conjunction core.
+    unsigned requested_threshold = 0, selected_activations = 0;
+    uint64_t coverage_version = 0;
+    bool target_encoding_complete = true, threshold_proof = false;
+};
+struct ThresholdConclusion {
+    std::vector<Target> window;
+    unsigned threshold;
+    uint64_t coverage_version;
 };
 // One immutable anchor per action. Labels are registered lazily in a single
 // Global instance; releasing a variable removes its assumption, not F.
@@ -211,6 +220,7 @@ class Global {
 
   public:
     ConflictCache conflicts;
+    std::vector<ThresholdConclusion> threshold_conclusions;
     std::optional<Assignment> invalid_exploration_model;
     std::string exploration_query_smt2() { return exploration.to_smt2(); }
     SolveBudgetState target_budget, exploration_budget;
@@ -224,6 +234,8 @@ class Global {
     GlobalResult query(const std::vector<Target> &targets, Budget &budget, Stats &stats,
                        unsigned allocation_ms = 0xffffffffU, bool adapt_pack = true,
                        GlobalRestrictions *restrictions = nullptr);
+    GlobalResult query_at_least(const std::vector<Target> &window, unsigned threshold,
+                               uint64_t coverage_version, Budget &budget, Stats &stats);
     GlobalResult repair(const std::vector<Target> &targets, Budget &budget, Stats &stats,
         const std::function<Gain(const Assignment &)> &score,
         const std::function<void(const GlobalResult &)> &feedback,
