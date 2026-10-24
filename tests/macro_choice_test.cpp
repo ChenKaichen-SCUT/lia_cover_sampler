@@ -144,6 +144,7 @@ int main() {
             Stats s;
             Budget b;
             b.seconds = 2;
+            g.allow_combo = true;
             g.query_override = [&](unsigned n) {
                 GlobalResult r;
                 if (!n) {

@@ -48,8 +48,11 @@ class MacroChoiceGenerator {
     // Synthetic regression seam only; production always checks the full F.
     std::function<std::optional<GlobalResult>(unsigned)> query_override;
     unsigned calls_seen = 0;
+    std::function<std::optional<GlobalResult>(unsigned)> timed_query_override;
+    bool allow_combo = false;
     MacroChoiceGenerator(Formula &, ChoiceCatalog &, unsigned);
-    GlobalResult query_choices(const std::vector<std::pair<unsigned, unsigned>> &, Budget &, Stats &);
+    GlobalResult query_choices(const std::vector<std::pair<unsigned, unsigned>> &, Budget &, Stats &,
+                               unsigned requested_ms = 0);
     BroadResult generate(bool structured, Global &, const OnlineCoverage &, const Assignment &, Budget &,
                          Stats &, const std::function<double(const ResidualCandidate &)> &,
                          unsigned max_calls = 2);

@@ -80,13 +80,51 @@ struct ProgressFeedback {
     }
     unsigned next_stalled(unsigned previous) const { return coverage ? 0 : previous + 1; }
 };
-enum class SolveStatus { Sat, Unsat, Timeout, Cancelled, ResourceExhausted, Unknown, NoTarget, BudgetExhausted };
+enum class SolveStatus {
+    Sat,
+    Unsat,
+    Timeout,
+    Cancelled,
+    ResourceExhausted,
+    Unknown,
+    NoTarget,
+    BudgetExhausted
+};
 std::string status_name(SolveStatus status);
+struct QueryExitEvidence {
+    std::string raw_reason;
+    unsigned actual_timeout_ms = 0;
+    double check_seconds = 0;
+    bool external_interrupt = false, session_deadline_reached = false, action_deadline_reached = false,
+         resource_limit_enabled = false;
+};
+struct QueryExitDecision {
+    SolveStatus code = SolveStatus::Unknown;
+    std::string classification = "unknown";
+    bool inferred = false, allow_upgrade = false, stop = false;
+};
+QueryExitDecision interpret_query_exit(const std::string &raw_status, const QueryExitEvidence &);
+struct QueryGrant {
+    unsigned requested_ms = 0, granted_ms = 0;
+    std::string clip_reason = "none";
+    bool full() const { return requested_ms && requested_ms == granted_ms; }
+};
+QueryGrant grant_query(unsigned requested, double session_left, double action_left, double reserve = 0);
+struct BroadBudgetPool {
+    double quota = 0, spent = 0;
+    explicit BroadBudgetPool(double q) : quota(q) {}
+    double available(double session_left) const;
+    void charge(double seconds) { spent += seconds; }
+};
 struct SolveBudgetState {
+    static constexpr unsigned levels[4] = {50, 200, 1000, 2000};
+    bool fixed_levels = false;
+    unsigned retry_level = 0;
     unsigned requested_timeout_ms = 50, max_timeout_ms = 2000;
     unsigned consecutive_timeouts = 0, consecutive_unknowns = 0, consecutive_fast_successes = 0;
     double cumulative_seconds = 0, cooldown_until = 0;
     void observe(SolveStatus status, double elapsed, double now, unsigned actual_ms);
+    void observe(const QueryExitDecision &, double elapsed, const QueryGrant &);
 };
 class Formula {
   public:
@@ -176,6 +214,14 @@ struct GlobalResult {
     std::vector<int> core;
     SolveStatus code = SolveStatus::Unknown;
     unsigned actual_timeout_ms = 0, resource_limit = 0;
+    unsigned requested_timeout_ms = 0, retry_level_before = 0, retry_level_after = 0;
+    std::string raw_status = "not_checked", budget_clip_reason = "none";
+    QueryExitEvidence exit_evidence;
+    QueryExitDecision exit_decision;
+    double check_seconds = 0, constraint_seconds = 0, completion_seconds = 0, validation_seconds = 0;
+    double session_remaining_before_check = 0, action_remaining_before_check = 0;
+    bool check_started = false;
+    std::string evidence_json() const;
     double elapsed_seconds = 0;
     std::vector<Target> attempted;
     std::vector<Target> core_targets;
@@ -236,11 +282,11 @@ class Global {
                        unsigned allocation_ms = 0xffffffffU, bool adapt_pack = true,
                        GlobalRestrictions *restrictions = nullptr);
     GlobalResult query_at_least(const std::vector<Target> &window, unsigned threshold,
-                               uint64_t coverage_version, Budget &budget, Stats &stats);
+                                uint64_t coverage_version, Budget &budget, Stats &stats);
     GlobalResult repair(const std::vector<Target> &targets, Budget &budget, Stats &stats,
-        const std::function<Gain(const Assignment &)> &score,
-        const std::function<void(const GlobalResult &)> &feedback,
-        unsigned max_calls = 4, unsigned max_expansions = 2);
+                        const std::function<Gain(const Assignment &)> &score,
+                        const std::function<void(const GlobalResult &)> &feedback, unsigned max_calls = 4,
+                        unsigned max_expansions = 2);
     GlobalResult explore(const Assignment &current, Budget &budget, Stats &stats,
                          unsigned allocation_ms = 0xffffffffU, bool bypass_soft_cooldown = false);
     size_t blocked_models() const { return blocked_model_keys.size(); }

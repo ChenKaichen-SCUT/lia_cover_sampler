@@ -417,16 +417,40 @@ GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &s
         ++stats.counts["exploration_cooldown_skips"];
         return out;
     }
+    auto construction = Clock::now();
     block_model(current, stats);
-    unsigned ms = budget.milliseconds(std::min(exploration_budget.requested_timeout_ms, allocation_ms));
+    out.constraint_seconds = std::chrono::duration<double>(Clock::now() - construction).count();
+    const Budget *root = &budget;
+    while (root->parent) root = root->parent;
+    out.session_remaining_before_check = root->left();
+    out.action_remaining_before_check = budget.left();
+    auto grant = grant_query(std::min(exploration_budget.requested_timeout_ms, allocation_ms), root->left(), budget.left());
+    unsigned ms = exploration_budget.fixed_levels ? grant.granted_ms : budget.milliseconds(grant.requested_ms);
+    if (!ms || budget.done()) {
+        out.code = interrupted ? SolveStatus::Cancelled : SolveStatus::BudgetExhausted;
+        out.status = status_name(out.code);
+        out.exit_decision.stop = interrupted || root->done();
+        out.elapsed_seconds = std::chrono::duration<double>(Clock::now() - begin).count();
+        return out;
+    }
     exploration.set("timeout", ms);
     ++stats.counts["exploration_calls"];
     auto mock = exploration_check ? exploration_check(ms) : std::optional<GlobalResult>{};
-    if (mock) out = *mock;
-    else {
+    if (mock) {
+        out.model = mock->model;
+        out.code = mock->code;
+        out.detail = mock->detail;
+        out.raw_status = mock->raw_status == "not_checked" ? (out.code == SolveStatus::Sat ? "sat" : out.code == SolveStatus::Unsat ? "unsat" : "unknown") : mock->raw_status;
+        out.check_seconds = mock->check_seconds;
+    } else {
+        auto checking = Clock::now();
         auto res = exploration.check();
+        out.check_seconds = std::chrono::duration<double>(Clock::now() - checking).count();
+        out.raw_status = res == z3::sat ? "sat" : res == z3::unsat ? "unsat" : "unknown";
         if (res == z3::sat) {
+            auto completion = Clock::now();
             out.model = f.complete(exploration.get_model());
+            out.completion_seconds = std::chrono::duration<double>(Clock::now() - completion).count();
             out.code = SolveStatus::Sat;
         } else if (res == z3::unsat) {
             out.code = SolveStatus::Unsat;
@@ -437,19 +461,33 @@ GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &s
                         std::chrono::duration<double>(Clock::now() - begin).count(), resource_limit);
         }
     }
+    out.check_started = true;
+    out.requested_timeout_ms = grant.requested_ms;
+    out.budget_clip_reason = grant.clip_reason;
+    out.retry_level_before = exploration_budget.retry_level;
+    out.exit_evidence = {out.detail, ms, out.check_seconds, bool(interrupted), root->left() <= 0,
+                         budget.left() <= 0, bool(resource_limit)};
+    out.exit_decision = interpret_query_exit(out.raw_status, out.exit_evidence);
+    if (exploration_budget.fixed_levels) out.code = out.exit_decision.code;
     if (out.model) {
+        auto validating = Clock::now();
         if (!f.validate(*out.model)) {
             invalid_exploration_model = *out.model;
             throw std::logic_error("invalid exploration model");
         }
+        out.validation_seconds = std::chrono::duration<double>(Clock::now() - validating).count();
+        auto blocking = Clock::now();
         block_model(*out.model, stats);
+        out.constraint_seconds += std::chrono::duration<double>(Clock::now() - blocking).count();
     }
     out.status = out.code == SolveStatus::Unsat ? "exploration_exhausted" : status_name(out.code);
     out.actual_timeout_ms = ms;
     out.resource_limit = resource_limit;
     out.elapsed_seconds = std::chrono::duration<double>(Clock::now() - begin).count();
     auto before = exploration_budget.requested_timeout_ms;
-    exploration_budget.observe(out.code, out.elapsed_seconds, budget.total_elapsed(), ms);
+    if (exploration_budget.fixed_levels) exploration_budget.observe(out.exit_decision, out.elapsed_seconds, grant);
+    else exploration_budget.observe(out.code, out.elapsed_seconds, budget.total_elapsed(), ms);
+    out.retry_level_after = exploration_budget.retry_level;
     if (before < exploration_budget.requested_timeout_ms) ++stats.counts["exploration_timeout_growth"];
     stats.counts["exploration_requested_timeout_last_ms"] = exploration_budget.requested_timeout_ms;
     stats.counts["exploration_actual_timeout_last_ms"] = ms;

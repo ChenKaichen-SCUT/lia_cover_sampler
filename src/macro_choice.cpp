@@ -257,49 +257,87 @@ MacroChoiceGenerator::MacroChoiceGenerator(Formula &formula, ChoiceCatalog &c, u
     solver.set("random_seed", seed);
 }
 GlobalResult MacroChoiceGenerator::query_choices(const std::vector<std::pair<unsigned, unsigned>> &choices,
-                                                 Budget &b, Stats &stats) {
+                                                 Budget &b, Stats &stats, unsigned requested_ms) {
     GlobalResult r;
     auto start = Clock::now();
     if (b.done()) {
-        r.code = SolveStatus::BudgetExhausted;
-        r.status = "budget_exhausted";
+        r.code = interrupted ? SolveStatus::Cancelled : SolveStatus::BudgetExhausted;
+        r.status = status_name(r.code);
+        r.exit_decision.stop = true;
         return r;
     }
     solver.push();
+    QueryGrant grant;
     try {
-        {
-            Timer scope(stats, "macro_constraint_seconds");
-            for (auto [g, a] : choices)
-                solver.add(f.nodes[catalog.groups.at(g).alternatives.at(a).node].expr);
-        }
-        if (b.done()) {
-            r.code = SolveStatus::BudgetExhausted;
-            r.status = "budget_exhausted";
+        auto construct = Clock::now();
+        for (auto [g, a] : choices)
+            solver.add(f.nodes[catalog.groups.at(g).alternatives.at(a).node].expr);
+        r.constraint_seconds = std::chrono::duration<double>(Clock::now() - construct).count();
+        stats.times["macro_constraint_seconds"] += r.constraint_seconds;
+        const Budget *root = &b;
+        while (root->parent)
+            root = root->parent;
+        r.session_remaining_before_check = root->left();
+        r.action_remaining_before_check = b.left();
+        grant =
+            grant_query(requested_ms ? requested_ms : adaptive.requested_timeout_ms, root->left(), b.left());
+        r.requested_timeout_ms = grant.requested_ms;
+        r.actual_timeout_ms = grant.granted_ms;
+        r.budget_clip_reason = grant.clip_reason;
+        r.retry_level_before = adaptive.retry_level;
+        if (!grant.granted_ms || b.done()) {
+            r.code = interrupted ? SolveStatus::Cancelled : SolveStatus::BudgetExhausted;
+            r.status = status_name(r.code);
+            r.exit_decision.stop = interrupted || root->done();
             solver.pop();
+            r.elapsed_seconds = std::chrono::duration<double>(Clock::now() - start).count();
             return r;
         }
-        r.actual_timeout_ms = b.milliseconds(adaptive.requested_timeout_ms);
-        solver.set("timeout", r.actual_timeout_ms);
-        auto mocked = query_override ? query_override(calls_seen) : std::optional<GlobalResult>{};
+        solver.set("timeout", grant.granted_ms);
+        auto mocked = timed_query_override ? timed_query_override(grant.granted_ms)
+                      : query_override     ? query_override(calls_seen)
+                                           : std::optional<GlobalResult>{};
         ++calls_seen;
-        if (mocked)
-            r = *mocked;
-        else {
-            Timer solving(stats, "macro_solve_seconds");
+        r.check_started = true;
+        if (mocked) {
+            r.model = mocked->model;
+            r.raw_status = mocked->raw_status == "not_checked"
+                               ? (mocked->code == SolveStatus::Sat     ? "sat"
+                                  : mocked->code == SolveStatus::Unsat ? "unsat"
+                                                                       : "unknown")
+                               : mocked->raw_status;
+            r.detail = mocked->detail;
+            r.check_seconds = mocked->check_seconds;
+        } else {
+            auto check_start = Clock::now();
             auto status = solver.check();
+            r.check_seconds = std::chrono::duration<double>(Clock::now() - check_start).count();
+            r.raw_status = status == z3::sat ? "sat" : status == z3::unsat ? "unsat" : "unknown";
             if (status == z3::sat) {
-                r.code = SolveStatus::Sat;
-                r.status = "sat";
+                auto complete = Clock::now();
                 r.model = f.complete(solver.get_model());
-            } else if (status == z3::unsat) {
-                r.code = SolveStatus::Unsat;
-                r.status = "unsat";
-            } else {
+                r.completion_seconds = std::chrono::duration<double>(Clock::now() - complete).count();
+            } else if (status == z3::unknown)
                 r.detail = solver.reason_unknown();
-                r.code = r.detail.find("timeout") != std::string::npos ? SolveStatus::Timeout
-                                                                       : SolveStatus::Unknown;
-                r.status = status_name(r.code);
-            }
+        }
+        stats.times["macro_check_seconds"] += r.check_seconds;
+        stats.times["macro_completion_seconds"] += r.completion_seconds;
+        r.exit_evidence = {
+            r.detail, grant.granted_ms, r.check_seconds, bool(interrupted), root->left() <= 0, b.left() <= 0,
+            false};
+        r.exit_decision = interpret_query_exit(r.raw_status, r.exit_evidence);
+        r.code = r.exit_decision.code;
+        r.status = status_name(r.code);
+        if (r.model) {
+            auto validation = Clock::now();
+            if (!f.validate(*r.model))
+                throw std::logic_error("invalid macro model");
+            for (auto [g, a] : choices)
+                for (auto &[v, z] : catalog.groups.at(g).alternatives.at(a).assignments)
+                    if (r.model->at(v) != z)
+                        throw std::logic_error("macro model misses forced alternative");
+            r.validation_seconds = std::chrono::duration<double>(Clock::now() - validation).count();
+            stats.times["macro_query_validation_seconds"] += r.validation_seconds;
         }
         solver.pop();
     } catch (...) {
@@ -307,7 +345,8 @@ GlobalResult MacroChoiceGenerator::query_choices(const std::vector<std::pair<uns
         throw;
     }
     r.elapsed_seconds = std::chrono::duration<double>(Clock::now() - start).count();
-    adaptive.observe(r.code, r.elapsed_seconds, b.total_elapsed(), r.actual_timeout_ms);
+    adaptive.observe(r.exit_decision, r.elapsed_seconds, grant);
+    r.retry_level_after = adaptive.retry_level;
     // F + exactly one unblocked alternative is the ONLY global proof scope.
     if (r.code == SolveStatus::Unsat && choices.size() == 1) {
         auto [g, a] = choices[0];
@@ -316,6 +355,7 @@ GlobalResult MacroChoiceGenerator::query_choices(const std::vector<std::pair<uns
     }
     return r;
 }
+
 namespace {
 bool better_candidate(const ResidualCandidate &a, const ResidualCandidate &b) {
     return a.gain.covered > b.gain.covered ||
@@ -418,7 +458,8 @@ BroadResult MacroChoiceGenerator::generate(bool structured, Global &global, cons
         std::ostringstream row;
         row << std::setprecision(17) << "{\"query\":" << out.calls << ",\"origin\":" << quote(origin)
             << ",\"status\":" << quote(q.status) << ",\"reason\":" << quote(q.detail)
-            << ",\"query_seconds\":" << q.elapsed_seconds << ",\"completed_seconds\":" << budget.elapsed()
+            << ",\"evidence\":" << q.evidence_json() << ",\"query_seconds\":" << q.elapsed_seconds
+            << ",\"completed_seconds\":" << budget.elapsed()
             << ",\"global_single_alternative_proof\":" << (q.global_target_proof ? "true" : "false")
             << ",\"forced_assignments_changed\":" << forced << ",\"choices\":[";
         if (macro_next)
@@ -430,8 +471,10 @@ BroadResult MacroChoiceGenerator::generate(bool structured, Global &global, cons
         row << "]}";
         out.queries.push_back(row.str());
         assess_broad(out, q, online, budget, stats, origin, checkpoint, &catalog, current);
+        if (q.exit_decision.stop)
+            break;
         bool combo = false;
-        if (macro_next && choices.size() == 1 && out.best && q.model) {
+        if (allow_combo && macro_next && choices.size() == 1 && out.best && q.model) {
             auto next = std::find_if(order.begin() + 1, order.end(),
                                      [&](auto c) { return c.first != choices.front().first; });
             if (next != order.end()) {
@@ -461,10 +504,13 @@ BroadResult plain_broad(Global &global, const OnlineCoverage &online, const Assi
         std::ostringstream row;
         row << std::setprecision(17) << "{\"query\":" << out.calls
             << ",\"origin\":\"exploration\",\"status\":" << quote(q.status)
-            << ",\"reason\":" << quote(q.detail) << ",\"query_seconds\":" << q.elapsed_seconds
-            << ",\"completed_seconds\":" << budget.elapsed() << '}';
+            << ",\"reason\":" << quote(q.detail) << ",\"evidence\":" << q.evidence_json()
+            << ",\"query_seconds\":" << q.elapsed_seconds << ",\"completed_seconds\":" << budget.elapsed()
+            << '}';
         out.queries.push_back(row.str());
         assess_broad(out, q, online, budget, stats, "exploration", checkpoint, nullptr, current);
+        if (q.exit_decision.stop)
+            break;
     }
     out.full_seconds = budget.elapsed();
     return out;
