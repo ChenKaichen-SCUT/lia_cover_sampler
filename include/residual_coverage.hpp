@@ -44,6 +44,7 @@ class OnlineCoverage {
     uint64_t outputs() const { return outputs_; }
     unsigned long initial_covered() const { return initial_covered_; }
     bool duplicate(const Assignment &model) const;
+    std::string model_json(const Assignment &model) const { return f.model_json(model); }
     std::optional<ResidualCandidate> prepare(const Assignment &model, const ResidualWindow &window,
                                              const std::string &origin, unsigned query) const;
     // finished is the actual model-flush timestamp in the same clock as deadline.
@@ -53,6 +54,7 @@ class OnlineCoverage {
 struct ResidualOptions {
     unsigned target_calls = 3;
     double reserve_fraction = .2;
+    bool exploration_fallback = true; // Round 8 reserves broad work externally; legacy default unchanged.
 };
 struct ResidualRound {
     ResidualWindow window;

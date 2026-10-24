@@ -179,7 +179,7 @@ ResidualRound ResidualGenerator::generate(bool cardinality,const OnlineCoverage 
             },options.target_calls,2);
         }
     }
-    if((!out.best || !out.best->gain.covered) && !work.done()) {
+    if(options.exploration_fallback && (!out.best || !out.best->gain.covered) && !work.done()) {
         const auto start=Clock::now();auto result=global.explore(current,work,stats,0xffffffffU,true);
         ++out.exploration_calls;
         log_query(result,"exploration",std::chrono::duration<double>(Clock::now()-start).count());
