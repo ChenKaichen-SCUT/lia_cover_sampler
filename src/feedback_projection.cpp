@@ -127,8 +127,10 @@ std::string ProjectionSelection::json(const Formula &f) const {
     }
     return o.str() + "]}";
 }
-ProjectionGuidedExplorer::ProjectionGuidedExplorer(Formula &formula, unsigned seed)
-    : f(formula), solver(f.ctx, z3::solver::simple()) {
+ProjectionGuidedExplorer::ProjectionGuidedExplorer(Formula &formula, unsigned seed, ProjectionOptions policy)
+    : f(formula), solver(f.ctx, z3::solver::simple()), options(policy) {
+    if (!options.timeout_ms || options.timeout_ms > 200)
+        throw std::invalid_argument("projection timeout cap");
     solver.add(f.root);
     solver.set("random_seed", seed);
 }
@@ -138,7 +140,14 @@ ProjectionResult ProjectionGuidedExplorer::query(const std::vector<unsigned> &va
     ProjectionResult out;
     out.variables = vars;
     auto &r = out.query;
+    out.blocks_before = out.blocks_after = blocked_keys.size();
     auto start = Clock::now();
+    if (!available()) {
+        out.stop_reason = stop_reason();
+        r.code = SolveStatus::NoTarget;
+        r.status = out.stop_reason;
+        return out;
+    }
     if (vars.empty() || vars.size() > 3 || history.empty() || history.size() > 4)
         throw std::invalid_argument("projection bounds");
     std::set<unsigned> unique(vars.begin(), vars.end());
@@ -179,8 +188,8 @@ ProjectionResult ProjectionGuidedExplorer::query(const std::vector<unsigned> &va
             root = root->parent;
         r.action_remaining_before_check = b.left();
         r.session_remaining_before_check = root->left();
-        auto g = grant_query(50, root->left(), b.left());
-        r.requested_timeout_ms = 50;
+        auto g = grant_query(options.timeout_ms, root->left(), b.left());
+        r.requested_timeout_ms = options.timeout_ms;
         r.actual_timeout_ms = g.granted_ms;
         r.budget_clip_reason = g.clip_reason;
         if (!g.granted_ms || b.done()) {
@@ -233,13 +242,40 @@ ProjectionResult ProjectionGuidedExplorer::query(const std::vector<unsigned> &va
         solver.pop();
         throw;
     }
+    // Scope has already been popped. Persist only exact complete assignments,
+    // even if the witness is late or will lose the online candidate competition.
+    if (r.model && options.persistent_blocks) {
+        auto blocking = Clock::now();
+        auto key = f.key(*r.model);
+        out.internal_duplicate = blocked_keys.count(key);
+        if (out.internal_duplicate) {
+            duplicate_stop = true; // Never retry an inconsistent returned identity indefinitely.
+        } else {
+            z3::expr_vector different(f.ctx);
+            for (unsigned v = 0; v < f.variables.size(); ++v)
+                different.push_back(f.nodes[f.variables[v]].expr != f.value(v, r.model->at(v)));
+            solver.add(z3::mk_or(different));
+            blocked_keys.insert(std::move(key));
+            out.block_added = true;
+        }
+        out.block_seconds = std::chrono::duration<double>(Clock::now() - blocking).count();
+        out.blocks_after = blocked_keys.size();
+        out.stop_reason = stop_reason();
+        stats.times["projection_block_seconds"] += out.block_seconds;
+        stats.counts["projection_block_added"] += out.block_added;
+        stats.counts["projection_internal_duplicate"] += out.internal_duplicate;
+    }
     r.elapsed_seconds = std::chrono::duration<double>(Clock::now() - start).count();
     stats.times["projection_query_seconds"] += r.elapsed_seconds;
     return out;
 }
 std::string ProjectionResult::condition_json(const Formula &f) const {
     std::ostringstream o;
-    o << "{\"variables\":[";
+    o << std::setprecision(17) << "{\"blocks_before\":" << blocks_before
+      << ",\"blocks_after\":" << blocks_after << ",\"block_seconds\":" << block_seconds
+      << ",\"block_added\":" << (block_added ? "true" : "false")
+      << ",\"internal_duplicate\":" << (internal_duplicate ? "true" : "false")
+      << ",\"stop_reason\":" << quote(stop_reason) << ",\"variables\":[";
     for (unsigned i = 0; i < variables.size(); ++i) {
         if (i)
             o << ',';
@@ -275,7 +311,7 @@ bool projection_better(const ResidualCandidate &a, const ResidualCandidate &b) {
            (a.gain.covered == b.gain.covered && a.gain.observed > b.gain.observed);
 }
 double ProjectionExtraBudget::allowance(double remaining) const {
-    double available = std::min({.05, quota - spent - .005, remaining - .05});
-    return available >= .02 ? available : 0;
+    double available = std::min({stage_cap, quota - spent - .005, remaining - .05});
+    return available >= minimum_stage ? available : 0;
 }
 } // namespace lia

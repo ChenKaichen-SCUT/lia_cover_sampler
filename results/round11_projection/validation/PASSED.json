@@ -1,0 +1,23 @@
+{
+  "release_cpp": 17,
+  "sanitizer_cpp": 17,
+  "release_python": 112,
+  "sanitizer_python": 112,
+  "old_cpp": 16,
+  "old_python": 104,
+  "all_passed": true,
+  "source_sha256": "65a413609bbf3eeb90427f7a7d0b00b091f03043248d9fd1dab79749796a2e07",
+  "logs": {
+    "results/round11_projection/validation/release-ctest.log": "2eecb48fcf8c2851c47653a19efe872654809c482f8e389789d4129c8eb0dd46",
+    "results/round11_projection/validation/release-python.log": "58153ad3bd440f40896029f41b27adad84bb447ee8ac0a0f3b9f1acecaf21aec",
+    "results/round11_projection/validation/sanitize-ctest.log": "04f26c78988db33ca86b4b37aa66dcf80909c6f5ebc1cdd6a6d3db3d8818fdf0",
+    "results/round11_projection/validation/sanitize-python.log": "b3ac05dfd7ba2eb6fc149c835fe363ac3614a7b0e85a91d21ec31691e7e3df6e"
+  },
+  "asan": "detect_leaks=1:halt_on_error=1:fast_unwind_on_malloc=0",
+  "ubsan": "halt_on_error=1:print_stacktrace=1",
+  "lsan_suppression": "results/round3_dev/sanitize_diagnostic/lsan_external_z3.supp",
+  "commands": [
+    "bash scripts/test_projection_fix_build.sh release",
+    "bash scripts/test_projection_fix_build.sh sanitize"
+  ]
+}

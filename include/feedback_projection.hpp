@@ -36,19 +36,38 @@ class FeedbackProjection {
     FeedbackProjection(Formula &, unsigned seed);
     ProjectionSelection select(const Coverage &, const std::deque<Assignment> &, Budget &);
 };
+struct ProjectionOptions {
+    bool persistent_blocks = false; // Opt-in: frozen round10 behavior remains available.
+    unsigned timeout_ms = 50;
+};
 struct ProjectionResult {
     GlobalResult query;
     std::vector<unsigned> variables;
     std::vector<std::vector<Z>> forbidden;
+    unsigned blocks_before = 0, blocks_after = 0;
+    double block_seconds = 0;
+    bool block_added = false, internal_duplicate = false;
+    std::string stop_reason = "none";
     std::string condition_json(const Formula &) const;
 };
 class ProjectionGuidedExplorer {
     Formula &f;
     z3::solver solver;
+    ProjectionOptions options;
+    std::set<std::string> blocked_keys;
+    bool duplicate_stop = false;
 
   public:
     std::function<std::optional<GlobalResult>(unsigned)> check_override;
-    ProjectionGuidedExplorer(Formula &, unsigned seed);
+    static constexpr unsigned block_limit = 256;
+    ProjectionGuidedExplorer(Formula &, unsigned seed, ProjectionOptions = {});
+    unsigned blocked_models() const { return blocked_keys.size(); }
+    bool available() const {
+        return !options.persistent_blocks || (blocked_keys.size() < block_limit && !duplicate_stop);
+    }
+    std::string stop_reason() const {
+        return duplicate_stop ? "projection_duplicate_guard" : available() ? "none" : "projection_block_cap";
+    }
     ProjectionResult query(const std::vector<unsigned> &, const std::deque<Assignment> &, Budget &, Stats &);
 };
 struct ProjectionTrigger {
@@ -63,8 +82,9 @@ struct ProjectionTrigger {
 // Tie retains ordinary candidate. No formal state is mutated here.
 bool projection_better(const ResidualCandidate &, const ResidualCandidate &);
 struct ProjectionExtraBudget {
-    double quota = 0, spent = 0;
-    explicit ProjectionExtraBudget(double session_seconds) : quota(session_seconds * .1) {}
+    double quota = 0, spent = 0, stage_cap = .05, minimum_stage = .02;
+    explicit ProjectionExtraBudget(double session_seconds, double cap = .05, double minimum = .02)
+        : quota(session_seconds * .1), stage_cap(cap), minimum_stage(minimum) {}
     double allowance(double remaining) const;
     void charge(double s) { spent += s; }
 };
