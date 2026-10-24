@@ -32,6 +32,10 @@ Global::Global(Formula &formula, unsigned seed, unsigned resource_limit)
 int Global::ensure(Target t) {
     if (auto it = ids.find(t); it != ids.end())
         return it->second;
+    struct RegistrationCost {
+        double &total;Clock::time_point start=Clock::now();
+        ~RegistrationCost(){total+=std::chrono::duration<double>(Clock::now()-start).count();}
+    } cost{registered_definition_seconds};
     int id = ids.size();
     auto e = f.nodes[t.node].expr;
     // Z3 fresh constants avoid collisions with every original symbol.
@@ -229,6 +233,69 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
             }
         trace(s.str() + "]}");
     }
+    return out;
+}
+GlobalResult Global::query_at_least(const std::vector<Target> &window,unsigned threshold,
+                                   uint64_t version,Budget &budget,Stats &stats) {
+    const auto begin=Clock::now();Timer all(stats,"threshold_query_seconds");
+    if(window.empty() || window.size()>8 || !threshold)
+        throw std::invalid_argument("threshold query requires 1..8 targets and positive k");
+    std::set<std::pair<int,unsigned>> unique;
+    for(auto t:window) {
+        if(t.node<0 || size_t(t.node)>=f.nodes.size() || t.bit>=64 ||
+           (f.nodes[t.node].boolean && t.bit) || !unique.insert({t.node,t.bit}).second)
+            throw std::invalid_argument("invalid/duplicate threshold bit identity");
+    }
+    GlobalResult out;out.requested_threshold=threshold;out.coverage_version=version;
+    auto finish=[&](SolveStatus code) {
+        out.code=code;out.status=status_name(code);
+        out.elapsed_seconds=std::chrono::duration<double>(Clock::now()-begin).count();
+        return out;
+    };
+    std::vector<int> encoded;
+    {Timer encoding(stats,"target_encoding_seconds");
+     for(auto t:window) {
+        if(budget.done()) break;
+        encoded.push_back(ensure(t));out.attempted.push_back(t);
+     }}
+    out.target_encoding_complete=encoded.size()==window.size();
+    stats.counts["registered_target_definitions"]=ids.size();
+    stats.counts["registered_activations"]=ids.size();
+    stats.counts["registered_quotients"]=registered_quotients;
+    if(budget.done()) return finish(interrupted?SolveStatus::Cancelled:SolveStatus::BudgetExhausted);
+    // Definitions are persistent; only the cardinality assertion is temporary.
+    // The selected a_i imply q_i, but no a_i is assumed true here.
+    struct Scope {z3::solver &s;Scope(z3::solver &s):s(s){s.push();}~Scope(){s.pop();}} scope(solver);
+    {Timer encoding(stats,"threshold_constraint_seconds");
+     z3::expr sum=f.ctx.int_val(0);
+     for(int id:encoded) sum=sum+z3::ite(activations[id],f.ctx.int_val(1),f.ctx.int_val(0));
+     solver.add(sum>=f.ctx.int_val(threshold));}
+    if(budget.done()) return finish(interrupted?SolveStatus::Cancelled:SolveStatus::BudgetExhausted);
+    last_assumptions.clear();
+    unsigned ms=budget.milliseconds(target_budget.requested_timeout_ms);
+    solver.set("timeout",ms);out.actual_timeout_ms=ms;out.resource_limit=resource_limit;
+    ++stats.counts["global_calls"];++stats.counts["threshold_calls"];
+    auto check_start=Clock::now();auto result=solver.check();
+    stats.times["solver_check_seconds"]+=std::chrono::duration<double>(Clock::now()-check_start).count();
+    if(result==z3::sat) {
+        Timer extract(stats,"model_completion_seconds");auto model=solver.get_model();
+        out.model=f.complete(model);out.code=SolveStatus::Sat;
+        for(int id:encoded) out.selected_activations+=model.eval(activations[id],true).is_true();
+    } else if(result==z3::unsat) {
+        out.code=SolveStatus::Unsat;out.threshold_proof=true;
+        threshold_conclusions.push_back({out.attempted,threshold,version});
+        // This is NOT a conjunction core or an individual unreachable target.
+    } else {
+        out.detail=solver.reason_unknown();
+        out.code=classify_unknown(out.detail,budget,ms,
+            std::chrono::duration<double>(Clock::now()-begin).count(),resource_limit);
+    }
+    out.status=status_name(out.code);
+    out.elapsed_seconds=std::chrono::duration<double>(Clock::now()-begin).count();
+    target_budget.observe(out.code,out.elapsed_seconds,budget.total_elapsed(),ms);
+    ++stats.counts["threshold_"+out.status];
+    stats.counts["target_requested_timeout_last_ms"]=target_budget.requested_timeout_ms;
+    stats.counts["target_actual_timeout_last_ms"]=ms;
     return out;
 }
 GlobalResult Global::repair(const std::vector<Target> &targets, Budget &budget, Stats &stats,

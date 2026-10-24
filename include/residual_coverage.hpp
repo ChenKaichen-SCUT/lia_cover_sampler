@@ -58,6 +58,7 @@ struct ResidualRound {
     ResidualWindow window;
     std::optional<ResidualCandidate> best;
     std::vector<std::string> queries;
+    std::vector<std::string> assessments;
     std::string terminal = "no_target";
     unsigned target_calls = 0, exploration_calls = 0, duplicates = 0, late = 0;
     double reserve_seconds = 0, full_seconds = 0;
@@ -70,6 +71,7 @@ class ResidualGenerator {
     ResidualOptions options;
     // Test seam: production leaves it empty. Queries otherwise use Global.
     std::function<std::optional<GlobalResult>(unsigned, const ResidualWindow &, unsigned)> threshold_override;
+    std::function<ResidualWindow(const OnlineCoverage &)> window_override;
     std::function<void(const std::string &)> boundary;
     ResidualGenerator(Formula &formula, unsigned seed) : f(formula), global(formula,seed), windows(formula,seed) {}
     ResidualRound generate(bool cardinality, const OnlineCoverage &online, const Assignment &current,

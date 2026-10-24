@@ -221,6 +221,7 @@ class Global {
   public:
     ConflictCache conflicts;
     std::vector<ThresholdConclusion> threshold_conclusions;
+    double registered_definition_seconds = 0;
     std::optional<Assignment> invalid_exploration_model;
     std::string exploration_query_smt2() { return exploration.to_smt2(); }
     SolveBudgetState target_budget, exploration_budget;
