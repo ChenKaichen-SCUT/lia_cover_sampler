@@ -67,7 +67,7 @@ static SolveStatus classify_unknown(const std::string &reason, const Budget &bud
     return SolveStatus::Unknown;
 }
 GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, Stats &stats, unsigned allocation_ms,
-                           bool adapt_pack) {
+                           bool adapt_pack, GlobalRestrictions *restrictions) {
     const auto begin = Clock::now();
     if (budget.done() || !allocation_ms) {
         GlobalResult out;
@@ -78,6 +78,7 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
     Timer timer(stats, "global_solve");
     std::set<int> pack;
     z3::expr_vector assumptions(f.ctx);
+    const auto encoding_start=Clock::now();
     for (auto t : targets) {
         if (budget.done() || pack.size() >= pack_size)
             break;
@@ -93,24 +94,69 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
         }
         pack = std::move(test);
     }
+    stats.times["target_encoding_seconds"]+=std::chrono::duration<double>(Clock::now()-encoding_start).count();
     stats.counts["registered_activations"]=ids.size();
     stats.counts["registered_target_definitions"]=ids.size();
     stats.counts["registered_quotients"]=registered_quotients;
-    if (pack.empty() || budget.done())
-        return {{}, "no_target", "", {}, SolveStatus::NoTarget};
+    if (pack.empty() || budget.done()) {
+        GlobalResult out;out.status="no_target";out.code=SolveStatus::NoTarget;
+        if(restrictions && budget.done()) {out.status="budget_exhausted";out.code=SolveStatus::BudgetExhausted;}
+        return out;
+    }
     for (int id : pack)
         assumptions.push_back(activations[id]);
+    std::map<unsigned,unsigned> fixed_ids;
+    std::set<unsigned> exclusion_ids;
+    if(restrictions) {
+        Timer constraints(stats,"fixed_constraint_seconds");
+        auto &r=*restrictions;
+        if(r.anchor.size()!=f.variables.size() || (r.owner && r.owner!=this))
+            throw std::invalid_argument("restriction frame has a different formula or solver owner");
+        r.owner=this;
+        for(unsigned i=0;i<r.anchor.size() && !budget.done();++i) {
+            if(r.free_variables.count(i)) continue;
+            auto it=r.fixed_labels.find(i);
+            if(it==r.fixed_labels.end()) {
+                z3::expr label(f.ctx,Z3_mk_fresh_const(f.ctx,"lia_fixed",f.ctx.bool_sort()));
+                solver.add(z3::implies(label,f.nodes[f.variables[i]].expr==f.value(i,r.anchor[i])));
+                it=r.fixed_labels.emplace(i,label).first;
+                ++stats.counts["fixed_definitions"];
+            }
+            assumptions.push_back(it->second);fixed_ids[it->second.id()]=i;
+        }
+        for(size_t j=0;j<r.excluded.size() && !budget.done();++j) {
+            if(r.excluded[j].size()!=f.variables.size()) throw std::invalid_argument("incomplete excluded model");
+            if(j==r.exclusion_labels.size()) {
+                z3::expr_vector differs(f.ctx);
+                for(unsigned i=0;i<f.variables.size();++i) {
+                    if(budget.done()) break;
+                    differs.push_back(f.nodes[f.variables[i]].expr!=f.value(i,r.excluded[j][i]));
+                }
+                if(budget.done()) break; // Never register a partial exclusion.
+                z3::expr label(f.ctx,Z3_mk_fresh_const(f.ctx,"lia_excluded",f.ctx.bool_sort()));
+                solver.add(z3::implies(label,z3::mk_or(differs)));
+                r.exclusion_labels.push_back(label);++stats.counts["exclusion_definitions"];
+            }
+            assumptions.push_back(r.exclusion_labels[j]);exclusion_ids.insert(r.exclusion_labels[j].id());
+        }
+        if(budget.done()) {
+            GlobalResult out;out.status="budget_exhausted";out.detail="restriction preparation deadline";
+            out.code=SolveStatus::BudgetExhausted;return out;
+        }
+    }
     last_assumptions.clear();
-    for (int id : pack)
-        last_assumptions += activations[id].to_string() + " ";
+    for (auto a : assumptions)
+        last_assumptions += a.to_string() + " ";
     unsigned ms = budget.milliseconds(std::min(target_budget.requested_timeout_ms, allocation_ms));
     solver.set("timeout", ms);
     ++stats.counts["global_calls"];
+    const auto check_start=Clock::now();
     auto res = solver.check(assumptions);
+    stats.times["solver_check_seconds"]+=std::chrono::duration<double>(Clock::now()-check_start).count();
     GlobalResult out;
     for (int id : pack) out.attempted.push_back(registered_targets.at(id));
     if (res == z3::sat) {
-        out.model = f.complete(solver.get_model());
+        {Timer extraction(stats,"model_completion_seconds");out.model = f.complete(solver.get_model());}
         out.status = "sat";
         out.code = SolveStatus::Sat;
         ++stats.counts["global_sat"];
@@ -121,16 +167,23 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
         out.code = SolveStatus::Unsat;
         std::set<int> core;
         for (auto a : solver.unsat_core()) {
-            int id = activation_ids.at(a.id());
-            core.insert(id);
-            out.core.push_back(id);
+            if(auto it=activation_ids.find(a.id());it!=activation_ids.end()) {
+                int id=it->second;core.insert(id);out.core.push_back(id);
+                out.core_targets.push_back(registered_targets.at(id));
+            } else if(auto it=fixed_ids.find(a.id());it!=fixed_ids.end()) {
+                out.fixed_core.push_back(it->second);
+            } else if(exclusion_ids.count(a.id())) out.exclusion_in_core=true;
+            else throw std::logic_error("unclassified solver assumption in core");
         }
-        if (core.empty())
+        out.global_target_proof=out.fixed_core.empty() && !out.exclusion_in_core;
+        if (core.empty() && out.global_target_proof)
             throw std::logic_error("original formula unexpectedly UNSAT after a valid seed");
-        if (use_cache)
+        if (use_cache && out.global_target_proof)
             conflicts.insert(core);
-        ++stats.counts["target_combination_conflict"];
-        ++stats.counts[core.size()==1 ? "target_singleton_proofs" : "target_multi_conflicts"];
+        if(out.global_target_proof) {
+            ++stats.counts["target_combination_conflict"];
+            ++stats.counts[core.size()==1 ? "target_singleton_proofs" : "target_multi_conflicts"];
+        } else ++stats.counts["local_restriction_conflicts"];
         if (adapt_pack) pack_size = std::max(1U, pack_size / 2);
     } else {
         out.detail = solver.reason_unknown();
@@ -149,7 +202,7 @@ GlobalResult Global::query(const std::vector<Target> &targets, Budget &budget, S
     if (!out.detail.empty()) ++stats.counts["target_reason:"+out.detail];
     if (trace) {
         std::ostringstream s;
-        s << "{\"kind\":\"global\",\"context\":\"original_formula_only\",\"status\":" << quote(out.status)
+        s << "{\"kind\":\"global\",\"context\":" << quote(restrictions ? "original_formula_with_scoped_assumptions" : "original_formula_only") << ",\"status\":" << quote(out.status)
           << ",\"reason\":" << quote(out.detail) << ",\"timeout_ms\":" << ms << ",\"assumptions\":[";
         bool first = true;
         for (int id : pack) {

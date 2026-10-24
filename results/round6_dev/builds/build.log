@@ -1,0 +1,96 @@
+[  3%] Building CXX object CMakeFiles/math_probe.dir/tests/math_probe.cpp.o
+[  3%] Building CXX object CMakeFiles/preparation_probe_frozen.dir/src/preparation_probe.cpp.o
+[  9%] Building CXX object CMakeFiles/lia_core.dir/src/core.cpp.o
+[  9%] Building CXX object CMakeFiles/frozen_ab_core.dir/vendor/frozen_ab/src/core.cpp.o
+[  9%] Building CXX object CMakeFiles/lia_core.dir/src/local.cpp.o
+[ 15%] Building CXX object CMakeFiles/frozen_ab_core.dir/vendor/frozen_ab/src/local.cpp.o
+[ 15%] Building CXX object CMakeFiles/lia_core.dir/src/control.cpp.o
+[ 21%] Building CXX object CMakeFiles/lia_core.dir/src/global.cpp.o
+[ 21%] Building CXX object CMakeFiles/frozen_ab_core.dir/vendor/frozen_ab/src/global.cpp.o
+[ 21%] Building CXX object CMakeFiles/lia_core.dir/src/scheduler.cpp.o
+[ 21%] Building CXX object CMakeFiles/lia_core.dir/src/search.cpp.o
+[ 23%] Building CXX object CMakeFiles/lia_core.dir/src/line.cpp.o
+[ 25%] Linking CXX executable math_probe
+[ 25%] Built target math_probe
+[ 27%] Building CXX object CMakeFiles/lia_core.dir/src/stream.cpp.o
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/global.cpp: In member function ‘lia::GlobalResult lia::Global::query(const std::vector<lia::Target>&, lia::Budget&, lia::Stats&, unsigned int, bool, lia::GlobalRestrictions*)’:
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/global.cpp:102:63: warning: missing initializer for member ‘lia::GlobalResult::attempted’ [-Wmissing-field-initializers]
+  102 |         return {{}, "no_target", "", {}, SolveStatus::NoTarget};
+      |                                                               ^
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/global.cpp:102:63: warning: missing initializer for member ‘lia::GlobalResult::core_targets’ [-Wmissing-field-initializers]
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/global.cpp:102:63: warning: missing initializer for member ‘lia::GlobalResult::fixed_core’ [-Wmissing-field-initializers]
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/global.cpp:139:123: warning: missing initializer for member ‘lia::GlobalResult::attempted’ [-Wmissing-field-initializers]
+  139 |         if(budget.done()) return {{},"budget_exhausted","restriction preparation deadline",{},SolveStatus::BudgetExhausted};
+      |                                                                                                                           ^
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/global.cpp:139:123: warning: missing initializer for member ‘lia::GlobalResult::core_targets’ [-Wmissing-field-initializers]
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/global.cpp:139:123: warning: missing initializer for member ‘lia::GlobalResult::fixed_core’ [-Wmissing-field-initializers]
+[ 29%] Building CXX object CMakeFiles/frozen_ab_core.dir/vendor/frozen_ab/src/control.cpp.o
+[ 31%] Building CXX object CMakeFiles/lia_core.dir/src/coverage_block_generator.cpp.o
+[ 33%] Linking CXX executable preparation_probe_frozen
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/coverage_block_generator.cpp: In member function ‘lia::BlockResult lia::CoverageBlockGenerator::generate(const Assignment&, const lia::Coverage&, lia::Budget&, uint64_t, bool, lia::Stats&, const std::function<bool(const std::__cxx11::basic_string<char>&)>&, const std::function<void(const std::vector<__gmp_expr<__mpz_struct [1], __mpz_struct [1]> >&, lia::Gain, double)>&, const std::vector<lia::Target>&)’:
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/coverage_block_generator.cpp:110:59: warning: missing initializer for member ‘lia::{anonymous}::Dependencies::required_cache’ [-Wmissing-field-initializers]
+  110 |     Dependencies deps{f,work,options.dependency_operations};
+      |                                                           ^
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/coverage_block_generator.cpp:111:65: warning: missing initializer for member ‘lia::{anonymous}::Dependencies::required_cache’ [-Wmissing-field-initializers]
+  111 |     Dependencies block_deps{f,work,options.dependency_operations};
+      |                                                                 ^
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/coverage_block_generator.cpp: In member function ‘std::string lia::BlockResult::json(const lia::Formula&) const’:
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/coverage_block_generator.cpp:256:9: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+  256 |         if(!first)o<<',';first=false;o<<"{\"status\":"<<quote(q.status)<<",\"detail\":"<<quote(q.detail)<<",\"block_size\":"<<q.block_size
+      |         ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/coverage_block_generator.cpp:256:26: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+  256 |         if(!first)o<<',';first=false;o<<"{\"status\":"<<quote(q.status)<<",\"detail\":"<<quote(q.detail)<<",\"block_size\":"<<q.block_size
+      |                          ^~~~~
+[ 33%] Built target preparation_probe_frozen
+[ 35%] Linking CXX static library libfrozen_ab_core.a
+[ 35%] Built target frozen_ab_core
+[ 37%] Linking CXX static library liblia_core.a
+[ 37%] Built target lia_core
+[ 58%] Building CXX object CMakeFiles/diagnostic_test.dir/tests/diagnostic_test.cpp.o
+[ 58%] Building CXX object CMakeFiles/search_test.dir/tests/search_test.cpp.o
+[ 58%] Building CXX object CMakeFiles/repair_test.dir/tests/repair_test.cpp.o
+[ 58%] Building CXX object CMakeFiles/output_refiner.dir/src/output_refiner.cpp.o
+[ 58%] Building CXX object CMakeFiles/snapshot_probe.dir/src/snapshot_probe.cpp.o
+[ 58%] Building CXX object CMakeFiles/coverage_block_probe.dir/src/coverage_block_probe.cpp.o
+[ 58%] Building CXX object CMakeFiles/preparation_probe.dir/src/preparation_probe.cpp.o
+[ 58%] Building CXX object CMakeFiles/lia_cover_sampler.dir/src/main.cpp.o
+[ 58%] Building CXX object CMakeFiles/line_test.dir/tests/line_test.cpp.o
+[ 58%] Building CXX object CMakeFiles/core_test.dir/tests/core_test.cpp.o
+[ 58%] Building CXX object CMakeFiles/preparation_reuse_test.dir/tests/preparation_reuse_test.cpp.o
+[ 60%] Building CXX object CMakeFiles/coverage_block_test.dir/tests/coverage_block_test.cpp.o
+[ 62%] Linking CXX executable coverage_block_probe
+[ 64%] Linking CXX executable repair_test
+[ 66%] Linking CXX static library liboutput_refiner.a
+[ 68%] Built target output_refiner
+[ 68%] Linking CXX executable preparation_probe
+[ 70%] Linking CXX executable snapshot_probe
+[ 72%] Building CXX object CMakeFiles/ab_sampler.dir/src/ab_adapter.cpp.o
+[ 72%] Built target repair_test
+[ 74%] Building CXX object CMakeFiles/ab_replay.dir/src/ab_replay.cpp.o
+[ 74%] Built target coverage_block_probe
+[ 76%] Building CXX object CMakeFiles/preservation_test.dir/tests/preservation_test.cpp.o
+[ 78%] Linking CXX executable line_test
+[ 78%] Built target preparation_probe
+[ 78%] Built target snapshot_probe
+[ 80%] Building CXX object CMakeFiles/ab_gate_test.dir/tests/ab_gate_test.cpp.o
+[ 82%] Linking CXX executable diagnostic_test
+[ 84%] Linking CXX executable coverage_block_test
+[ 86%] Linking CXX executable preparation_reuse_test
+[ 86%] Built target line_test
+[ 88%] Linking CXX executable search_test
+[ 90%] Linking CXX executable core_test
+[ 90%] Built target diagnostic_test
+[ 90%] Built target coverage_block_test
+[ 90%] Built target preparation_reuse_test
+[ 90%] Built target core_test
+[ 90%] Built target search_test
+[ 92%] Linking CXX executable preservation_test
+[ 92%] Built target preservation_test
+[ 94%] Linking CXX executable lia_cover_sampler
+[ 96%] Linking CXX executable ab_gate_test
+[ 96%] Built target ab_gate_test
+[ 98%] Linking CXX executable ab_replay
+[ 98%] Built target lia_cover_sampler
+[ 98%] Built target ab_replay
+[100%] Linking CXX executable ab_sampler
+[100%] Built target ab_sampler

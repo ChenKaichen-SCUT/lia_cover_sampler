@@ -178,6 +178,21 @@ struct GlobalResult {
     unsigned actual_timeout_ms = 0, resource_limit = 0;
     double elapsed_seconds = 0;
     std::vector<Target> attempted;
+    std::vector<Target> core_targets;
+    std::vector<unsigned> fixed_core;
+    bool exclusion_in_core = false, global_target_proof = false;
+};
+// One immutable anchor per action. Labels are registered lazily in a single
+// Global instance; releasing a variable removes its assumption, not F.
+// Dormant fresh implications are unconstrained in subsequent actions.
+struct GlobalRestrictions {
+    const Assignment anchor;
+    std::set<unsigned> free_variables;
+    std::vector<Assignment> excluded;
+    std::map<unsigned, z3::expr> fixed_labels;
+    std::vector<z3::expr> exclusion_labels;
+    const void *owner = nullptr;
+    explicit GlobalRestrictions(Assignment seed) : anchor(std::move(seed)) {}
 };
 class Global {
     Formula &f;
@@ -207,7 +222,8 @@ class Global {
     std::function<void(const std::string &)> trace;
     explicit Global(Formula &f, unsigned seed, unsigned resource_limit = 0);
     GlobalResult query(const std::vector<Target> &targets, Budget &budget, Stats &stats,
-                       unsigned allocation_ms = 0xffffffffU, bool adapt_pack = true);
+                       unsigned allocation_ms = 0xffffffffU, bool adapt_pack = true,
+                       GlobalRestrictions *restrictions = nullptr);
     GlobalResult repair(const std::vector<Target> &targets, Budget &budget, Stats &stats,
         const std::function<Gain(const Assignment &)> &score,
         const std::function<void(const GlobalResult &)> &feedback,
