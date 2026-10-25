@@ -1,0 +1,188 @@
+--- a/src/smt/smt_context.h
++++ b/src/smt/smt_context.h
+@@ -51,6 +51,9 @@
+ #include "solver/assertions/asserted_formulas.h"
+ #include "sampler/sampler.h"
+ #include <tuple>
++#include <unordered_map>
++#include <unordered_set>
++#include <chrono>
+ 
+ // there is a significant space overhead with allocating 1000+ contexts in
+ // the case that each context only references a few expressions.
+@@ -263,6 +266,20 @@
+         // Value initialization
+         //
+         // ----------------------------------
++        struct soft_phase_entry {
++            expr_ref original, normalized;
++            unsigned group; bool truth, sign=false, used=false;
++            soft_phase_entry(ast_manager& m, expr* a, unsigned g, bool t):original(a,m),normalized(a,m),group(g),truth(t){}
++        };
++        vector<soft_phase_entry> m_soft_preferences;
++        std::unordered_map<unsigned,unsigned> m_soft_lookup;
++        std::unordered_set<unsigned> m_soft_used_groups;
++        unsigned m_soft_epoch=0, m_soft_conflict_start=0, m_soft_applied=0;
++        uint64_t m_soft_opportunities=0, m_soft_same=0, m_soft_reused=0, m_soft_cap=0, m_soft_conflict_cap=0, m_soft_special=0, m_soft_assigned=0;
++        double m_soft_lookup_seconds=0;
++        std::vector<std::string> m_soft_events;
++        bool m_soft_active=false;
++        void soft_phase_decision(bool_var v, bool& is_pos);
+         vector<std::pair<expr_ref, expr_ref>> m_values;
+         void initialize_value(expr* var, expr* value);
+ 
+@@ -1817,6 +1834,9 @@
+         }
+ 
+         void user_propagate_initialize_value(expr* var, expr* value);
++        void soft_phase_replace(unsigned n, expr* const* atoms, unsigned const* truth, unsigned const* groups, unsigned epoch);
++        void soft_phase_clear();
++        std::string soft_phase_log();
+ 
+         bool watches_fixed(enode* n) const;
+ 
+--- a/src/smt/smt_context.cpp
++++ b/src/smt/smt_context.cpp
+@@ -1735,6 +1735,57 @@
+ /**
+    \brief Returns a truth value for the given variable
+ */
++// The table holds strong AST references. No assertion, internalization, random
++// draw, decision-variable selection or phase-cache update is performed here.
++void context::soft_phase_clear() {
++    m_soft_active=false;m_soft_lookup.clear();m_soft_preferences.reset();m_soft_used_groups.clear();
++}
++void context::soft_phase_replace(unsigned n, expr* const* atoms, unsigned const* truth, unsigned const* groups, unsigned epoch) {
++    soft_phase_clear();m_soft_epoch=epoch;m_soft_conflict_start=m_stats.m_num_conflicts;
++    m_soft_applied=0;m_soft_opportunities=m_soft_same=m_soft_reused=m_soft_cap=m_soft_conflict_cap=m_soft_special=m_soft_assigned=0;
++    m_soft_lookup_seconds=0;m_soft_events.clear();
++    for(unsigned i=0;i<n;++i) {
++        m_soft_preferences.push_back(soft_phase_entry(m,atoms[i],groups[i],truth[i]!=0));
++        auto &e=m_soft_preferences.back();m_rewriter(e.original,e.normalized);
++        expr* inner=nullptr;
++        while(m.is_not(e.normalized,inner)){e.sign=!e.sign;e.normalized=inner;}
++        if(m.is_true(e.normalized)||m.is_false(e.normalized)||m.is_and(e.normalized)||m.is_or(e.normalized)||m.is_ite(e.normalized)||is_quantifier(e.normalized))continue;
++        // Ambiguous normalized aliases are deliberately disabled.
++        auto [it,added]=m_soft_lookup.emplace(e.normalized->get_id(),i);
++        if(!added)it->second=UINT_MAX;
++    }
++    m_soft_active=n>0;
++}
++void context::soft_phase_decision(bool_var v, bool& is_pos) {
++    auto begin=std::chrono::steady_clock::now();
++    struct elapsed_guard {double& dst;std::chrono::steady_clock::time_point begin;~elapsed_guard(){dst+=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();}} clock{m_soft_lookup_seconds,begin};
++    if(m_user_propagator){++m_soft_special;return;}
++    if(get_assignment(v)!=l_undef){++m_soft_assigned;return;}
++    auto it=m_soft_lookup.find(bool_var2expr(v)->get_id());
++    if(it==m_soft_lookup.end()||it->second==UINT_MAX)return;
++    auto &e=m_soft_preferences[it->second];++m_soft_opportunities;
++    bool native=is_pos,desired=e.truth!=e.sign,applied=false;
++    unsigned conflicts=m_stats.m_num_conflicts-m_soft_conflict_start;
++    if(e.used||m_soft_used_groups.count(e.group))++m_soft_reused;
++    else if(m_soft_applied>=8)++m_soft_cap;
++    else if(conflicts>=64)++m_soft_conflict_cap;
++    else if(native==desired)++m_soft_same;
++    else {is_pos=desired;e.used=true;m_soft_used_groups.insert(e.group);++m_soft_applied;applied=true;}
++    if(applied||m_soft_events.size()<32){std::ostringstream o;o<<"{\"atom_id\":"<<e.original->get_id()<<",\"normalized_id\":"<<e.normalized->get_id()
++        <<",\"internal_var\":"<<v<<",\"negated\":"<<(e.sign?"true":"false")<<",\"group\":"<<e.group
++        <<",\"native_truth\":"<<(native!=e.sign?"true":"false")<<",\"preferred_truth\":"<<(e.truth?"true":"false")
++        <<",\"applied\":"<<(applied?"true":"false")<<",\"decision\":"<<m_stats.m_num_decisions<<",\"conflicts\":"<<conflicts<<"}";m_soft_events.push_back(o.str());}
++}
++std::string context::soft_phase_log(){
++    std::ostringstream o;o.precision(17);o<<"{\"epoch\":"<<m_soft_epoch<<",\"active\":"<<(m_soft_active?"true":"false")<<",\"installed\":"<<m_soft_preferences.size()
++      <<",\"opportunities\":"<<m_soft_opportunities<<",\"same_native\":"<<m_soft_same<<",\"applied\":"<<m_soft_applied<<",\"already_used\":"<<m_soft_reused
++      <<",\"override_cap\":"<<m_soft_cap<<",\"conflict_cap\":"<<m_soft_conflict_cap<<",\"special_interface\":"<<m_soft_special<<",\"already_assigned\":"<<m_soft_assigned<<",\"lookup_seconds\":"<<m_soft_lookup_seconds<<",\"mapping\":[";
++    for(unsigned i=0;i<m_soft_preferences.size();++i){auto &e=m_soft_preferences[i];if(i)o<<',';auto v=get_bool_var_of_id_option(e.normalized->get_id());
++      auto it=m_soft_lookup.find(e.normalized->get_id());bool supported=it!=m_soft_lookup.end()&&it->second!=UINT_MAX;
++      o<<"{\"atom_id\":"<<e.original->get_id()<<",\"normalized_id\":"<<e.normalized->get_id()<<",\"group\":"<<e.group<<",\"negated\":"<<(e.sign?"true":"false")<<",\"supported\":"<<(supported?"true":"false")<<",\"mapped\":"<<(v!=null_bool_var&&supported?"true":"false")<<",\"assigned\":"<<(v!=null_bool_var&&get_assignment(v)!=l_undef?"true":"false")<<",\"internal_var\":"<<v<<"}";}
++    o<<"],\"events\":[";for(unsigned i=0;i<m_soft_events.size();++i){if(i)o<<',';o<<m_soft_events[i];}return o.str()+"]}";
++}
++
+ bool context::guess(bool_var var, lbool phase) {
+     if (is_quantifier(m_bool_var2expr[var])) {
+         // Overriding any decision on how to assign the quantifier.
+@@ -1854,6 +1905,7 @@
+         l = literal(var, false);
+     }
+ 
++    if (m_soft_active) soft_phase_decision(var, is_pos);
+     if (!is_pos) l.neg();
+     TRACE("decide", tout << "case split " << l << "\n"
+                          << "activity: " << get_activity(var) << "\n";);
+--- a/src/solver/solver.h
++++ b/src/solver/solver.h
+@@ -53,6 +53,9 @@
+     params_ref  m_params;
+     symbol      m_cancel_backup_file;
+ public:
++    virtual void soft_phase_replace(unsigned,expr* const*,unsigned const*,unsigned const*,unsigned) { throw default_exception("soft phase requires simple SMT solver"); }
++    virtual void soft_phase_clear() {}
++    virtual std::string soft_phase_log() { return "{}"; }
+     solver(ast_manager& m): check_sat_result(m) {}
+ 
+     /**
+--- a/src/smt/smt_solver.cpp
++++ b/src/smt/smt_solver.cpp
+@@ -23,6 +23,7 @@
+ #include "ast/ast_pp.h"
+ #include "ast/func_decl_dependencies.h"
+ #include "smt/smt_kernel.h"
++#include "smt/smt_context.h"
+ #include "smt/params/smt_params.h"
+ #include "smt/params/smt_params_helper.hpp"
+ #include "solver/solver_na2as.h"
+@@ -252,6 +253,9 @@
+             m_context.user_propagate_register_decide(c);
+         }
+ 
++        void soft_phase_replace(unsigned n,expr* const* a,unsigned const* t,unsigned const* g,unsigned epoch) override {m_context.get_context().soft_phase_replace(n,a,t,g,epoch);}
++        void soft_phase_clear() override {m_context.get_context().soft_phase_clear();}
++        std::string soft_phase_log() override {return m_context.get_context().soft_phase_log();}
+         void user_propagate_initialize_value(expr* var, expr* value) override {
+             m_context.user_propagate_initialize_value(var, value);
+         }
+--- a/src/api/z3_api.h
++++ b/src/api/z3_api.h
+@@ -7280,6 +7280,19 @@
+        def_API('Z3_solver_set_initial_value', VOID, (_in(CONTEXT), _in(SOLVER), _in(AST), _in(AST)))
+      */
+ 
++    /** Project extension: replace one check's soft decision phases; never assertions.
++        def_API('Z3_solver_set_soft_phases', VOID, (_in(CONTEXT), _in(SOLVER), _in(UINT), _in_array(2, AST), _in_array(2, UINT), _in_array(2, UINT), _in(UINT)))
++    */
++    void Z3_API Z3_solver_set_soft_phases(Z3_context c, Z3_solver s, unsigned n, Z3_ast const atoms[], unsigned const truths[], unsigned const groups[], unsigned epoch);
++    /**
++        def_API('Z3_solver_clear_soft_phases', VOID, (_in(CONTEXT), _in(SOLVER)))
++    */
++    void Z3_API Z3_solver_clear_soft_phases(Z3_context c, Z3_solver s);
++    /**
++        def_API('Z3_solver_get_soft_phase_log', STRING, (_in(CONTEXT), _in(SOLVER)))
++    */
++    Z3_string Z3_API Z3_solver_get_soft_phase_log(Z3_context c, Z3_solver s);
++
+     void Z3_API Z3_solver_set_initial_value(Z3_context c, Z3_solver s, Z3_ast v, Z3_ast val);
+ 
+ 
+--- a/src/api/api_solver.cpp
++++ b/src/api/api_solver.cpp
+@@ -1181,6 +1181,20 @@
+         Z3_CATCH_RETURN(nullptr);
+     }
+ 
++    void Z3_API Z3_solver_set_soft_phases(Z3_context c,Z3_solver s,unsigned n,Z3_ast const atoms[],unsigned const truths[],unsigned const groups[],unsigned epoch) {
++        Z3_TRY;RESET_ERROR_CODE();init_solver(c,s);
++        if(n>128){SET_ERROR_CODE(Z3_INVALID_ARG,"at most 128 soft preferences");return;}
++        for(unsigned i=0;i<n;++i)if(!mk_c(c)->m().is_bool(to_expr(atoms[i])) || truths[i]>1){SET_ERROR_CODE(Z3_INVALID_ARG,"Boolean atom and truth required");return;}
++        to_solver_ref(s)->soft_phase_replace(n,to_exprs(n,atoms),truths,groups,epoch);
++        Z3_CATCH;
++    }
++    void Z3_API Z3_solver_clear_soft_phases(Z3_context c,Z3_solver s) {
++        Z3_TRY;RESET_ERROR_CODE();init_solver(c,s);to_solver_ref(s)->soft_phase_clear();Z3_CATCH;
++    }
++    Z3_string Z3_API Z3_solver_get_soft_phase_log(Z3_context c,Z3_solver s) {
++        Z3_TRY;RESET_ERROR_CODE();init_solver(c,s);return mk_c(c)->mk_external_string(to_solver_ref(s)->soft_phase_log());Z3_CATCH_RETURN("");
++    }
++
+     void Z3_API Z3_solver_set_initial_value(Z3_context c, Z3_solver s, Z3_ast var, Z3_ast value) {
+         Z3_TRY;
+         LOG_Z3_solver_set_initial_value(c, s, var, value);
