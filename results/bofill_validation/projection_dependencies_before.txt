@@ -1,0 +1,81 @@
+"docs/\347\254\254\345\215\201\344\270\200\350\275\256\345\256\236\351\252\214\345\215\217\350\256\256.md":7:ProjectionGuidedExplorer 新增显式开启的持久完整模型阻塞，默认旧行为不变。每个 SAT 完成全部原变量补全及原 F 验证后，先撤销临时投影作用域，再添加所有原变量至少一个不同的精确 no-good；成功登记后永久保留，候选即使未输出或晚到也阻塞。最多 256 条，达到上限停本会话引导，不清空重建。正式输出重复、此前内部重复、首次新候选分开记录。若求解器返回已阻塞身份，保留日志并关闭引导，防止重复重试。局部阻塞/投影 UNSAT 不是 F 不可达证据。
+"docs/\347\254\254\345\215\201\344\270\200\350\275\256\346\212\225\345\275\261\344\277\256\350\241\245\344\270\216\345\220\214\351\242\204\347\256\227\345\256\236\351\252\214\346\212\245\345\221\212.md":159:代码：include/feedback_projection.hpp、src/feedback_projection.cpp、src/projection_fixed_probe.cpp；Global::explore新增默认关闭的时限请求参数。src/projection_component_probe.cpp仅用于固定状态组件验证。协议在 docs/第十一轮实验协议.md，原第十轮结果未修改。
+"docs/\347\254\254\345\215\201\350\275\256\345\256\236\346\226\275\346\214\207\345\274\225.md":77:### 3.1 新增 FeedbackProjection
+"docs/\347\254\254\345\215\201\350\275\256\345\256\236\346\226\275\346\214\207\345\274\225.md":82:include/feedback_projection.hpp
+"docs/\347\254\254\345\215\201\350\275\256\345\256\236\346\226\275\346\214\207\345\274\225.md":202:ProjectionGuidedExplorer
+"docs/\347\254\254\345\215\201\350\275\256\345\256\236\346\226\275\346\214\207\345\274\225.md":431:include/feedback_projection.hpp
+"docs/\347\254\254\345\215\201\350\275\256\350\246\206\347\233\226\345\217\215\351\246\210\346\212\225\345\275\261\346\234\272\345\210\266\344\270\216\345\256\236\351\252\214\346\212\245\345\221\212.md":7:基于 `86f97e4` 新建 `round10-feedback-projection`；实验代码和协议冻结在 `1c63b56ecdbef33d4fbc14af37baedef9efde445`。原第九轮 plain_fixed / macro_fair_retry、Global 实现、第一至九轮结果及覆盖评测器不变。新增 `FeedbackProjection`、`ProjectionGuidedExplorer` 和独立 `projection_online_probe` 入口，未接入原正式采样器。没有运行 HighDiv、全量历史模型重放、900 秒实验或新 OR/bit/变量块策略。
+include/feedback_projection.hpp:21:class FeedbackProjection {
+include/feedback_projection.hpp:36:    FeedbackProjection(Formula &, unsigned seed);
+include/feedback_projection.hpp:39:struct ProjectionOptions {
+include/feedback_projection.hpp:43:struct ProjectionResult {
+include/feedback_projection.hpp:53:class ProjectionGuidedExplorer {
+include/feedback_projection.hpp:56:    ProjectionOptions options;
+include/feedback_projection.hpp:63:    ProjectionGuidedExplorer(Formula &, unsigned seed, ProjectionOptions = {});
+include/feedback_projection.hpp:71:    ProjectionResult query(const std::vector<unsigned> &, const std::deque<Assignment> &, Budget &, Stats &);
+include/feedback_projection.hpp:73:struct ProjectionTrigger {
+include/feedback_projection.hpp:83:bool projection_better(const ResidualCandidate &, const ResidualCandidate &);
+include/feedback_projection.hpp:84:struct ProjectionExtraBudget {
+include/feedback_projection.hpp:86:    explicit ProjectionExtraBudget(double session_seconds, double cap = .05, double minimum = .02)
+results/round10_projection/main_10s/plan.json:900:    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/include/feedback_projection.hpp": "54dc40713e8f9e956c869a498df99a7200cfbb487aa3bd414b9954890ec0da9e",
+results/round10_projection/mechanism/plan.json:1482:    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/include/feedback_projection.hpp": "54dc40713e8f9e956c869a498df99a7200cfbb487aa3bd414b9954890ec0da9e",
+results/round11_projection/main_10s/plan.json:608:    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/include/feedback_projection.hpp": "51dcd8b413230867a63f77d49c7cce179208212e4b0c5bae1cfa2ef2218a65af",
+results/round11_projection/mechanism/plan.json:220:    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/include/feedback_projection.hpp": "51dcd8b413230867a63f77d49c7cce179208212e4b0c5bae1cfa2ef2218a65af",
+results/round12_saved_candidate_review/input_manifest.json:692:      "path": "include/feedback_projection.hpp",
+results/round12_saved_candidate_review/input_manifest.json:1082:      "path": "include/feedback_projection.hpp",
+scripts/report_projection_fix.py:46: text+=['','Bromberger前缀与only相同，首个输出弱于extra；convert/fixed/seed1只完成1份，第二份及后续前缀未达到；SMT_random/extra/seed0全部前缀未达到。按事前“两seed同时超过10%退步”的规则，没有触发可重复早期退步项，但这不表示每条轨迹均无退步。','','## 验收决定与限制','','本轮结论为 **修补有效、性能未通过**：去重和初始化机会问题解决，但SMT_random仍无投影SAT，convert的两份投影均输给已拥有的普通模型，Bromberger更多互补候选也未带来同预算最终优势。满足事前“两个seed都胜过两个对照且有严格投影赢家”的独立公式数为0，候选供给保护也失败。decision.json为STOP_performance_not_passed，propose_30s_only=false、enter_D=false。不提新参数，不扩大实验，不用更多预算追正例。','','两项修补同时启用，本轮不能区分它们各自对端到端轨迹的独立因果效果。可以确认的是：持久阻塞的作用域、真实授予时间和合法候选身份都有直接证据；最终指标仍不支持继续。只有2个seed、3个开发公式，不外推到全部数据集，不声称新的生成理论或算法优势。','','## 文件与可重放命令','','代码：include/feedback_projection.hpp、src/feedback_projection.cpp、src/projection_fixed_probe.cpp；Global::explore新增默认关闭的时限请求参数。src/projection_component_probe.cpp仅用于固定状态组件验证。协议在 docs/第十一轮实验协议.md，原第十轮结果未修改。','','```bash','cmake -S . -B build/round11/release -DCMAKE_BUILD_TYPE=Release -DZ3_PREFIX=/tmp/lia-highdiv-frozen/venv','cmake --build build/round11/release -j6','bash scripts/test_projection_fix_build.sh release','cmake -S . -B build/round11/sanitize -DCMAKE_BUILD_TYPE=Debug -DZ3_PREFIX=/tmp/lia-highdiv-frozen/venv \\\n  -DCMAKE_CXX_FLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" \\\n  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"','cmake --build build/round11/sanitize -j6','bash scripts/test_projection_fix_build.sh sanitize','```','','原实验完整命令逐会话存于 runs.jsonl。新目录重放（代码须为clean tracked状态；不覆盖归档）：','','```bash','export HIGHDIV_ROOT=/tmp/lia-highdiv-frozen','PY=/tmp/lia-highdiv-frozen/venv/bin/python3','$PY scripts/run_projection_fix.py --stage B --binary build/round11/release/projection_component_probe --output /tmp/r11-component-replay','$PY scripts/audit_projection_component.py /tmp/r11-component-replay --jobs 6','$PY scripts/run_projection_fix.py --stage C --binary build/round11/release/projection_fixed_probe --output /tmp/r11-online-replay','$PY scripts/audit_projection_fix.py /tmp/r11-online-replay --jobs 6','$PY scripts/audit_projection_fix_inputs.py /tmp/r11-online-replay','$PY scripts/analyze_projection_fix.py /tmp/r11-online-replay','```','','C入口还要求仓库本次组件AUDIT通过；不含D入口。只复核保存证据时不运行run脚本，先解压raw.tar.gz到对应批次目录，或在副本运行审计以避免覆盖既有audit/。审计调用被no_search限制，只对原模型具体求值。单会话入口：','','```bash','build/round11/release/projection_fixed_probe benchmarks/SMT_random_LIA_ex14600_2600_100.smt2 \\\n  projection_fixed 10 0 /tmp/r11-single \\\n  results/round3_snapshots/states/SMT_random_LIA_ex14600_2600_100.smt2/prefix-1/prefix.values \\\n  results/round3_snapshots/states/SMT_random_LIA_ex14600_2600_100.smt2/prefix-1/seed.values','```','','将模式换为plain_only/plain_extra并使用新的输出目录即可。results/round11_projection下保存完整原始模型与日志归档、逐成员哈希、逐会话审计、每查询成本、sessions/curves/costs/pairs/summary/paired_summary表、门槛和可导出图。CSV均保留零输出/失败；全部模型身份绑定来源与时间。冻结源码摘要：`'+plan['source_sha256']+'`。']
+scripts/report_projection_pairs.py:11: text=['# 第十轮：覆盖反馈投影机制与实验报告','','**结论：停止扩大实验，不进入 30 秒验证。** 新模块确实能在 Bromberger 产生一些优于同周期普通模型的合法候选，但未稳定改善 10 秒累计覆盖。其余两个真实公式没有交付任何投影候选。没有满足事前门槛的独立正面案例，Bromberger 的首个输出相对 plain_extra 还有可重复退步。本轮不调整频率、投影规模、评分或 timeout 来追求正例。','','## 范围、实现与冻结','','基于 `86f97e4` 新建 `round10-feedback-projection`；实验代码和协议冻结在 `'+plan['commit']+'`。原第九轮 plain_fixed / macro_fair_retry、Global 实现、第一至九轮结果及覆盖评测器不变。新增 `FeedbackProjection`、`ProjectionGuidedExplorer` 和独立 `projection_online_probe` 入口，未接入原正式采样器。没有运行 HighDiv、全量历史模型重放、900 秒实验或新 OR/bit/变量块策略。','','覆盖使用原公式 AST、短路访问、Int 低 64 位、原分母。S0 恢复原前缀并去重提交已有合法种子；种子覆盖不是本轮生成收益，恢复、解析和初始化计时。每个周期先运行普通探索，在同一覆盖版本比较普通与额外候选；按新增 covered、再 observed、再普通优先选取。所有 SAT 赋值、重复、失败、迟到和未胜出候选都有日志；内部候选不更新正式状态，零收益输出不被过滤。未启用可选待选池，未胜出的普通模型保存为内部证据但不计正式吞吐。','','每次从最多 32 个变量的有界静态依赖评分中，取最高分八个里的最多三个；评分为相关节点单侧缺口数乘近期稳定系数。使用最近最多四份不同正式模型的去重投影，临时查询完整 F 加投影差异，其他变量自由。引导使用独立常驻 simple solver，临时约束 push/pop；局部 UNSAT 不进入全局不可达缓存。初始互补机会及至少四个不同零增益普通候选触发，额外尝试后至少四次普通机会。每次最多一次额外查询，阶段额度 50 ms、会话总额 10%，评估/写出预留 15 ms，最终交付另有预留。完整参数见《第十轮实验协议》。','','**实际时间限制：** 本次会话额外总额度均未超限；但 convert/seed-0 的引导 solver 初始化是不可中断的原生调用，令一次阶段实际达到 **54.366512 ms**，超过 50 ms **4.366512 ms**。该阶段没有发起投影 check，也没有产生投影候选，原普通见证仍及时提交；全部成本计入，状态为 `initialization_budget`。因此当前实现在原生初始化上不能保证严格的 50 ms 墙钟硬截止，不能把“审计通过”表述成所有时间上限都未突破。没有通过删掉该会话或补跑消除此限制。','','## 正确性、机制小样本与可复核性','','Release 和 ASan/UBSan 均通过 **16 项 C++ + 104 项 Python 测试**（含此前 15/97 项）。测试覆盖短路/共享表达式、Bool/大整数、非选定变量自由、等式协同变化、临时约束撤销、局部 UNSAT/Unknown、晚到排除、已有普通见证保留、种子去重、首次观察配对、内部覆盖隔离和边际恒等式。Sanitizer 保留 leak 检查，仅复用已冻结的外部 Z3 抑制项。','','阶段 B：三个开发公式 prefix-1/10 × 两 seed × 三模式各 1 秒，另三个合成状态 × 三模式各 0.5 秒，共 **45 会话**。所有会话保留；独立 Manual 审计 '+str(ba['validated_models'])+' 次求值，通过全部覆盖与输出一致性检查，额外阶段/总额超限均为 0。Bromberger 投影实际赢出 48 次，同周期净替换增益合计 316 bit；额外普通赢出 8 次、109 bit。但这不是端到端效益证明。SMT_random 在 1 秒下三模式均无新输出；convert 没有投影 SAT。合成可变投影、固定投影、可变但无新覆盖三例通过；合成成功不算真实正例。','','阶段 C：三个原开发公式 prefix-1 × seed 0/1/2 × 三模式，共 **27 个 10 秒会话**。每批两个完整三模式组，最多六路；组内顺序轮换、批间屏障。独立审计在采样结束后运行，核验 '+str(ca['validated_models'])+' 次模型求值；所有原始模型合法、完整 seen0/seen1 和候选评分一致、截止提交与去重一致、边际和等于累计增益。额外阶段超限 1 次、会话总额超限 0 次。没有缺失/进程失败、没有静默删除零输出会话。补充审计还核对原始 prefix/seed 文本、三个配置同状态同波次，以及 864 个归档成员的逐文件哈希。','','## 10 秒累计覆盖','','下表是三个 seed 的均值；括号为按原分母计算的百分点增量，不是相对百分比。不同公式的 bit 不能代表相同难度，会话是配对单位，三个动作/模型不是独立重复。','','| 案例 | plain_only | plain_extra | projection_escape | 投影 − extra，均值 bit |','|---|---:|---:|---:|---:|']
+src/feedback_projection.cpp:1:#include "feedback_projection.hpp"
+src/feedback_projection.cpp:6:FeedbackProjection::FeedbackProjection(Formula &formula, unsigned seed)
+src/feedback_projection.cpp:11:ProjectionSelection FeedbackProjection::select(const Coverage &coverage,
+src/feedback_projection.cpp:130:ProjectionGuidedExplorer::ProjectionGuidedExplorer(Formula &formula, unsigned seed, ProjectionOptions policy)
+src/feedback_projection.cpp:137:ProjectionResult ProjectionGuidedExplorer::query(const std::vector<unsigned> &vars,
+src/feedback_projection.cpp:140:    ProjectionResult out;
+src/feedback_projection.cpp:272:std::string ProjectionResult::condition_json(const Formula &f) const {
+src/feedback_projection.cpp:299:std::string ProjectionTrigger::observe(const std::optional<ResidualCandidate> &candidate) {
+src/feedback_projection.cpp:309:bool projection_better(const ResidualCandidate &a, const ResidualCandidate &b) {
+src/feedback_projection.cpp:313:double ProjectionExtraBudget::allowance(double remaining) const {
+src/projection_component_probe.cpp:1:#include "feedback_projection.hpp"
+src/projection_component_probe.cpp:67:        std::unique_ptr<FeedbackProjection> feedback;
+src/projection_component_probe.cpp:68:        std::unique_ptr<ProjectionGuidedExplorer> guided;
+src/projection_component_probe.cpp:88:            ProjectionResult projection;
+src/projection_component_probe.cpp:92:                    feedback = std::make_unique<FeedbackProjection>(f, seed);
+src/projection_component_probe.cpp:99:                            std::make_unique<ProjectionGuidedExplorer>(f, seed, ProjectionOptions{true, 200});
+src/projection_fixed_probe.cpp:1:#include "feedback_projection.hpp"
+src/projection_fixed_probe.cpp:81:        std::unique_ptr<FeedbackProjection> feedback;
+src/projection_fixed_probe.cpp:82:        std::unique_ptr<ProjectionGuidedExplorer> guided;
+src/projection_fixed_probe.cpp:83:        ProjectionTrigger trigger;
+src/projection_fixed_probe.cpp:84:        ProjectionExtraBudget extra_budget(seconds, .25, .04);
+src/projection_fixed_probe.cpp:188:                    ProjectionResult result;
+src/projection_fixed_probe.cpp:194:                            feedback = std::make_unique<FeedbackProjection>(f, seed);
+src/projection_fixed_probe.cpp:206:                                guided = std::make_unique<ProjectionGuidedExplorer>(
+src/projection_fixed_probe.cpp:207:                                    f, seed, ProjectionOptions{true, 200});
+src/projection_fixed_probe.cpp:232:                    if (extra && (!best || projection_better(*extra, *best))) {
+src/projection_online_probe.cpp:1:#include "feedback_projection.hpp"
+src/projection_online_probe.cpp:81:        std::unique_ptr<FeedbackProjection> feedback;
+src/projection_online_probe.cpp:82:        std::unique_ptr<ProjectionGuidedExplorer> guided;
+src/projection_online_probe.cpp:83:        ProjectionTrigger trigger;
+src/projection_online_probe.cpp:84:        ProjectionExtraBudget extra_budget(seconds);
+src/projection_online_probe.cpp:185:                    ProjectionResult result;
+src/projection_online_probe.cpp:191:                            feedback = std::make_unique<FeedbackProjection>(f, seed);
+src/projection_online_probe.cpp:203:                                guided = std::make_unique<ProjectionGuidedExplorer>(f, seed);
+src/projection_online_probe.cpp:228:                    if (extra && (!best || projection_better(*extra, *best))) {
+tests/feedback_projection_test.cpp:1:#include "feedback_projection.hpp"
+tests/feedback_projection_test.cpp:23:            FeedbackProjection feedback(f, 0);
+tests/feedback_projection_test.cpp:35:            ProjectionGuidedExplorer guided(f, 0);
+tests/feedback_projection_test.cpp:53:            if (failed && (!best || projection_better(*failed, *best)))
+tests/feedback_projection_test.cpp:56:            check(!projection_better(*c, *plain), "tie retains ordinary");
+tests/feedback_projection_test.cpp:59:            check(!projection_better(worse, *plain), "lower gain cannot win");
+tests/feedback_projection_test.cpp:70:            FeedbackProjection fb(f, 2);
+tests/feedback_projection_test.cpp:77:                check(x.related_nodes <= FeedbackProjection::node_cap, "bounded shared AST dependencies");
+tests/feedback_projection_test.cpp:91:            ProjectionGuidedExplorer q(f, 0);
+tests/feedback_projection_test.cpp:107:            ProjectionGuidedExplorer q(f, 0);
+tests/feedback_projection_test.cpp:134:            ProjectionTrigger t;
+tests/feedback_projection_test.cpp:146:            ProjectionExtraBudget cap(10);
+tests/feedback_projection_test.cpp:150:            check(ProjectionExtraBudget(10).allowance(.06) == 0, "final delivery reserved");
+tests/projection_fix_test.cpp:1:#include "feedback_projection.hpp"
+tests/projection_fix_test.cpp:21:            ProjectionGuidedExplorer g(f, 0, {true, 200});
+tests/projection_fix_test.cpp:48:            ProjectionGuidedExplorer g(f, 0, {true, 200});
+tests/projection_fix_test.cpp:69:            ProjectionGuidedExplorer g(f, 0, {true, 200});
+tests/projection_fix_test.cpp:82:            ProjectionGuidedExplorer g(f, 0, {true, 200});
+tests/projection_fix_test.cpp:136:            ProjectionExtraBudget quota(10, .25, .04);

@@ -402,7 +402,7 @@ void Global::rebuild_exploration(Stats &stats) {
     ++stats.counts["exploration_rebuilds"];
 }
 GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &stats, unsigned allocation_ms,
-                             bool bypass_soft_cooldown, unsigned requested_override_ms) {
+                             bool bypass_soft_cooldown) {
     Timer timer(stats, "exploration_solve");
     const auto begin = Clock::now();
     GlobalResult out;
@@ -424,7 +424,7 @@ GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &s
     while (root->parent) root = root->parent;
     out.session_remaining_before_check = root->left();
     out.action_remaining_before_check = budget.left();
-    auto grant = grant_query(std::min(requested_override_ms ? requested_override_ms : exploration_budget.requested_timeout_ms, allocation_ms), root->left(), budget.left());
+    auto grant = grant_query(std::min(exploration_budget.requested_timeout_ms, allocation_ms), root->left(), budget.left());
     unsigned ms = exploration_budget.fixed_levels ? grant.granted_ms : budget.milliseconds(grant.requested_ms);
     if (!ms || budget.done()) {
         out.code = interrupted ? SolveStatus::Cancelled : SolveStatus::BudgetExhausted;

@@ -1,0 +1,34 @@
+include/core.hpp:265:    void block_model(const Assignment &model, Stats &stats);
+include/core.hpp:290:    GlobalResult explore(const Assignment &current, Budget &budget, Stats &stats,
+include/core.hpp:292:                         unsigned requested_override_ms = 0);
+src/global.cpp:20:Global::Global(Formula &formula, unsigned seed, unsigned resource_limit)
+src/global.cpp:384:void Global::block_model(const Assignment &model, Stats &stats) {
+src/global.cpp:404:GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &stats, unsigned allocation_ms,
+src/global.cpp:405:                             bool bypass_soft_cooldown, unsigned requested_override_ms) {
+src/global.cpp:421:    block_model(current, stats);
+src/global.cpp:427:    auto grant = grant_query(std::min(requested_override_ms ? requested_override_ms : exploration_budget.requested_timeout_ms, allocation_ms), root->left(), budget.left());
+src/global.cpp:480:        block_model(*out.model, stats);
+tests/projection_fix_test.cpp:64:            check(ordinary.explore({0}, b, st).model.has_value(), "ordinary unaffected after cap");
+tests/projection_fix_test.cpp:133:            auto c = control.explore({0}, enough, st, 200, true, 200);
+tests/feedback_projection_test.cpp:48:            check(ordinary.conflicts.cores.empty() && ordinary.explore({0, 10}, b, stats).model.has_value(),
+tests/core_test.cpp:127:            auto e = global.explore(Assignment{0, 0, 0}, budget, stats);
+tests/core_test.cpp:195:                auto result = global.explore(Assignment{0}, budget, stats);
+tests/core_test.cpp:202:            auto clipped = global.explore(Assignment{0}, budget, stats, 25);
+tests/core_test.cpp:208:            try { global.explore(Assignment{0},budget,stats); }
+src/residual_coverage.cpp:183:        const auto start=Clock::now();auto result=global.explore(current,work,stats,0xffffffffU,true);
+src/projection_online_probe.cpp:157:            auto pquery = global.explore(current, work, stats, 0xffffffffU, true);
+src/projection_online_probe.cpp:221:                        auto q = global.explore(current, solve, stats, 0xffffffffU, true);
+src/projection_fixed_probe.cpp:158:            auto pquery = global.explore(current, work, stats, 0xffffffffU, true);
+src/projection_fixed_probe.cpp:225:                        auto q = global.explore(current, solve, stats, 200, true, 200);
+src/projection_component_probe.cpp:119:                    q = plain->explore(m, work, stats, 200, true, 200);
+src/main.cpp:668:                        auto e = global->explore(current, work_budget, stats, 0xffffffffU,
+src/macro_choice.cpp:548:            q = global.explore(current, work, stats, 0xffffffffU, true);
+src/macro_choice.cpp:592:        auto q = global.explore(current, work, stats, 0xffffffffU, true);
+src/global.cpp:20:Global::Global(Formula &formula, unsigned seed, unsigned resource_limit)
+src/global.cpp:384:void Global::block_model(const Assignment &model, Stats &stats) {
+src/global.cpp:404:GlobalResult Global::explore(const Assignment &current, Budget &budget, Stats &stats, unsigned allocation_ms,
+src/global.cpp:405:                             bool bypass_soft_cooldown, unsigned requested_override_ms) {
+src/global.cpp:421:    block_model(current, stats);
+src/global.cpp:427:    auto grant = grant_query(std::min(requested_override_ms ? requested_override_ms : exploration_budget.requested_timeout_ms, allocation_ms), root->left(), budget.left());
+src/global.cpp:480:        block_model(*out.model, stats);
+src/ab_adapter.cpp:461:                        auto e = global->explore(current, budget, stats);
