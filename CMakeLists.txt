@@ -137,3 +137,7 @@ target_link_libraries(bofill_sampler PRIVATE lia_core)
 
 add_executable(bofill_first_sat_probe src/bofill_first_sat_probe.cpp)
 target_link_libraries(bofill_first_sat_probe PRIVATE lia_core)
+
+add_executable(bofill_fallback_test tests/bofill_fallback_test.cpp)
+target_link_libraries(bofill_fallback_test PRIVATE lia_core)
+add_test(NAME bofill_fallback COMMAND bofill_fallback_test)

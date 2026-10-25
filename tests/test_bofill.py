@@ -19,7 +19,7 @@ class Bofill(unittest.TestCase):
             summary=json.loads((d/'summary.json').read_text());self.assertEqual(summary['coverage'],m.export(s));self.assertEqual(summary['formal_count'],len(ids));return summary
     def test_complete_enumeration_both_modes_original_coverage(self):
         text='(declare-const x Int)(declare-const y Int)(declare-const b Bool)(assert (and (or (= x 0)(= x 18446744073709551617))(>= y (- 1))(<= y 1)(or b (= y 0))))'
-        for mode in ['plain','choice_compiled']:
+        for mode in ['plain','simplify_only','eq_only','choice_only','full','choice_compiled','full_fallback']:
             s=self.audit(self.run_case(text,mode),text);self.assertEqual(s['terminal'],'exhausted_full_original_models');self.assertEqual(s['formal_count'],8)
     def test_empty_model(self):
         s=self.audit(self.run_case('(assert true)'),'(assert true)');self.assertEqual(s['formal_count'],1)

@@ -20,6 +20,19 @@ class FirstSat(unittest.TestCase):
     def test_expired_session_never_checks(self):
         for control in ['repeated_2s','continuous']:
             d=self.run_probe('(assert true)','plain',control,expired=True);self.assertEqual((d/'queries.jsonl').read_text(),'');self.assertEqual(json.loads((d/'summary.json').read_text())['terminal'],'NO_SAT_WITHIN_BUDGET')
+    def test_first_model_fallback_uses_remaining_parent_time(self):
+        sampler=Path(os.environ.get('LIA_BOFILL_BINARY',ROOT/'build/bofill_diagnosis/release/bofill_sampler'))
+        with tempfile.TemporaryDirectory() as tmp:
+            d=Path(tmp);(d/'f').write_text('(declare-const x Int)(assert (or (= x 0)(= x 2)))')
+            env=dict(os.environ,BOFILL_START_MONO_NS=str(time.monotonic_ns()-10_050_000_000))
+            p=subprocess.run([str(sampler),str(d/'f'),'full_fallback','11','0',str(d/'out')],env=env,capture_output=True,text=True,timeout=4)
+            self.assertEqual(p.returncode,0,p.stderr);summary=json.loads((d/'out/summary.json').read_text());event=json.loads((d/'out/fallback.json').read_text())
+            self.assertTrue(summary['fallback_occurred']);self.assertEqual(summary['formal_count'],2)
+            self.assertEqual(summary['stats']['counts']['plain_fallback_outputs'],2);self.assertEqual(summary['stats']['counts'].get('compiled_outputs',0),0)
+            self.assertLess(event['remaining_before'],1);self.assertGreaterEqual(event['start'],10)
+            from test_bofill import Bofill
+            Bofill.audit(self,d/'out',(d/'f').read_text())
+            for row in map(json.loads,(d/'out/commits.jsonl').read_text().splitlines()):self.assertTrue(row['timely']);self.assertLessEqual(row['completion'],11)
     def test_proved_unsat_separate_from_timeout(self):
         d=self.run_probe('(assert false)','full','continuous');self.assertEqual(json.loads((d/'summary.json').read_text())['terminal'],'UNSAT');self.assertFalse((d/'candidate.json').exists())
 if __name__=='__main__':unittest.main()
