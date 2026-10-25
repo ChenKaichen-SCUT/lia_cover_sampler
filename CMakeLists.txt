@@ -9,7 +9,7 @@ find_path(Z3_INCLUDE_DIR z3++.h PATHS "${Z3_PREFIX}/include" NO_DEFAULT_PATH REQ
 find_library(Z3_LIBRARY z3 PATHS "${Z3_PREFIX}/lib" NO_DEFAULT_PATH REQUIRED)
 find_library(GMP_LIBRARY gmp REQUIRED)
 find_library(GMPXX_LIBRARY gmpxx REQUIRED)
-add_library(lia_core src/core.cpp src/local.cpp src/global.cpp src/control.cpp src/scheduler.cpp src/search.cpp src/line.cpp src/stream.cpp src/coverage_block_generator.cpp src/residual_coverage.cpp src/macro_choice.cpp src/plateau_tracker.cpp)
+add_library(lia_core src/core.cpp src/local.cpp src/global.cpp src/control.cpp src/scheduler.cpp src/search.cpp src/line.cpp src/stream.cpp src/coverage_block_generator.cpp src/residual_coverage.cpp src/macro_choice.cpp src/plateau_tracker.cpp src/lia_choice_compiler.cpp)
 file(GLOB LIA_SOURCE_FILES CONFIGURE_DEPENDS src/*.cpp include/*.hpp)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${LIA_SOURCE_FILES})
 set(LIA_SOURCE_DIGESTS "")
@@ -128,4 +128,6 @@ add_executable(macro_retry_test tests/macro_retry_test.cpp)
 target_link_libraries(macro_retry_test PRIVATE lia_core)
 add_test(NAME macro_retry COMMAND macro_retry_test)
 
-
+add_executable(lia_choice_compiler_test tests/lia_choice_compiler_test.cpp)
+target_link_libraries(lia_choice_compiler_test PRIVATE lia_core)
+add_test(NAME lia_choice_compiler COMMAND lia_choice_compiler_test)
