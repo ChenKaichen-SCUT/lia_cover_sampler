@@ -1,0 +1,94 @@
+{
+  "sessions": [
+    {
+      "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+      "mode": "plain",
+      "seed": 0,
+      "control": "continuous",
+      "seconds": 120,
+      "terminal": "SAT",
+      "success": true,
+      "first_sat_seconds": 9.024272083,
+      "first_legal_seconds": 9.030483165,
+      "completion": 9.037227943,
+      "process_wall_seconds": 9.059749928,
+      "elapsed": 9.03874827,
+      "cpu_seconds": 9.013776,
+      "queries": 1,
+      "check_seconds": 8.98353,
+      "compile_seconds": 0.00256315,
+      "load_seconds": 0.0133178,
+      "structure_write_seconds": 0.010476,
+      "initialization_seconds": 0.00250397,
+      "statistics_seconds": 8.4441e-05,
+      "compiled_nodes": 5792,
+      "solving_variables": 780,
+      "eliminations": 0,
+      "compile_stop": "disabled"
+    },
+    {
+      "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+      "mode": "full",
+      "seed": 0,
+      "control": "continuous",
+      "seconds": 120,
+      "terminal": "NO_SAT_WITHIN_BUDGET",
+      "success": false,
+      "first_sat_seconds": null,
+      "first_legal_seconds": null,
+      "completion": null,
+      "process_wall_seconds": 120.00496192,
+      "elapsed": 119.979154722,
+      "cpu_seconds": 119.954506,
+      "queries": 1,
+      "check_seconds": 118.571,
+      "compile_seconds": 1.36916,
+      "load_seconds": 0.0134039,
+      "structure_write_seconds": 0.0120149,
+      "initialization_seconds": 0.00199225,
+      "statistics_seconds": 3.2259e-05,
+      "compiled_nodes": 5601,
+      "solving_variables": 701,
+      "eliminations": 2,
+      "compile_stop": "operation_limit"
+    }
+  ],
+  "groups": [
+    {
+      "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+      "mode": "full",
+      "control": "continuous",
+      "runs": 1,
+      "sat": 0,
+      "failures": 1,
+      "successful_first_legal_mean": null,
+      "successful_first_legal_median": null,
+      "all_run_cost_mean": 119.979154722
+    },
+    {
+      "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+      "mode": "plain",
+      "control": "continuous",
+      "runs": 1,
+      "sat": 1,
+      "failures": 0,
+      "successful_first_legal_mean": 9.030483165,
+      "successful_first_legal_median": 9.030483165,
+      "all_run_cost_mean": 9.03874827
+    }
+  ],
+  "paired": [
+    {
+      "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+      "seed": 0,
+      "control": "continuous",
+      "mode": "full",
+      "variant_success": false,
+      "plain_success": true,
+      "first_legal_difference": null,
+      "ratio": null,
+      "relation": "variant_failed"
+    }
+  ],
+  "failure_policy": "right-censored; no invented first-SAT value; all failures kept in all-run costs"
+}

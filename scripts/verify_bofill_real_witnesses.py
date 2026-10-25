@@ -5,7 +5,7 @@ from pathlib import Path
 from run_bofill_diagnosis import MODES, INPUTS
 from run_bofill_900s import sha,dump
 from audit_bofill_diagnosis import structure
-from reevaluate_round6_saved_candidates import no_search, FrozenCoverage, write_csv
+from reevaluate_round6_saved_candidates import no_search, FrozenCoverage, write_csv, model_id
 ROOT=Path(__file__).resolve().parents[1]
 def main():
     binary=ROOT/'build/bofill_diagnosis/release/bofill_first_sat_probe';out=ROOT/'results/bofill_diagnosis/semantic';out.mkdir(parents=True,exist_ok=True);rows=[];provenance=[]
@@ -14,6 +14,10 @@ def main():
         old=ROOT/'results/bofill_900s/runs'/f'{index*3:02d}_plain_clean/raw';saved=list(map(json.loads,(old/'models.jsonl').read_text().splitlines()))[:10]
         audited=list(__import__('csv').DictReader((ROOT/'results/bofill_900s/audit'/f'{index*3:02d}_plain_clean/model_audit.csv').open()))[:10]
         assert len(saved)==len(audited)==10 and all(r['accepted']=='True' for r in audited)
+        assert all(model_id(m['model'])==r['model_sha256'] for m,r in zip(saved,audited))
+        archived=json.loads((ROOT/'results/bofill_900s/archive_manifest.json').read_text())
+        entry=next(e for e in archived['runs'] if e['run']==f'{index*3:02d}_plain_clean')
+        assert sha(old/'models.jsonl')==entry['content_sha256'][f'runs/{index*3:02d}_plain_clean/raw/models.jsonl']
         source=d/'original.smt2';source.write_bytes(formula.read_bytes());values=d/'saved.values';values.write_text(''.join(' '.join(str(r['value']).lower() for r in model['model'])+'\n' for model in saved))
         (d/'saved_models.jsonl').write_text(''.join(json.dumps(model)+'\n' for model in saved))
         provenance.append(dict(case=case,formula_sha256=expected,source_models=str((old/'models.jsonl').relative_to(ROOT)),source_models_sha256=sha(old/'models.jsonl'),source_audit=str((ROOT/'results/bofill_900s/audit'/f'{index*3:02d}_plain_clean/model_audit.csv').relative_to(ROOT)),first_indices=[m['index'] for m in saved]))
