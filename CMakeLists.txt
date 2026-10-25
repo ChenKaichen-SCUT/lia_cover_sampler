@@ -134,3 +134,6 @@ add_test(NAME lia_choice_compiler COMMAND lia_choice_compiler_test)
 
 add_executable(bofill_sampler src/bofill_sampler.cpp)
 target_link_libraries(bofill_sampler PRIVATE lia_core)
+
+add_executable(bofill_first_sat_probe src/bofill_first_sat_probe.cpp)
+target_link_libraries(bofill_first_sat_probe PRIVATE lia_core)

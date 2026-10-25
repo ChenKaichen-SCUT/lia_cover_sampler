@@ -18,11 +18,11 @@ uint64_t state_fingerprint(const Coverage &c) {
 }
 int main(int argc,char **argv) {
     try {
-        if(argc!=6)throw std::invalid_argument("bofill_sampler F plain|choice_compiled SECONDS SEED NEW_OUT");
+        if(argc!=6)throw std::invalid_argument("bofill_sampler F plain|simplify_only|eq_only|choice_only|full|choice_compiled SECONDS SEED NEW_OUT");
         Budget budget;budget.seconds=std::stod(argv[3]);
         if(auto p=std::getenv("BOFILL_START_MONO_NS"))budget.start=Clock::time_point(std::chrono::duration_cast<Clock::duration>(std::chrono::nanoseconds(std::stoll(p))));
         if(!std::isfinite(budget.seconds)||budget.seconds<=0)throw std::invalid_argument("seconds");
-        const std::string mode=argv[2];if(mode!="plain"&&mode!="choice_compiled")throw std::invalid_argument("mode");
+        const std::string mode=argv[2];const auto selected=parse_compile_mode(mode);
         unsigned seed=std::stoul(argv[4]);std::signal(SIGTERM,stop);std::signal(SIGINT,stop);
         const std::filesystem::path dir(argv[5]);
         if(!std::filesystem::create_directory(dir))throw std::runtime_error("new output directory required");
@@ -30,13 +30,13 @@ int main(int argc,char **argv) {
         for(auto p:{&models,&commits,&queries}){*p<<std::setprecision(17);if(!*p)throw std::runtime_error("journal open failed");}
         Stats stats;double t=budget.elapsed();Formula f(argv[1]);stats.times["load"]=budget.elapsed()-t;
         if(!f.metric_compatible)throw std::runtime_error("unsupported original metric: "+f.metric_reason);
-        t=budget.elapsed();CompiledProblem problem(f,mode=="choice_compiled",budget);stats.times["compile"]=budget.elapsed()-t;
+        t=budget.elapsed();CompiledProblem problem(f,selected,budget);stats.times["compile"]=budget.elapsed()-t;
         {t=budget.elapsed();std::ofstream out(dir/"structure.json");out<<problem.json()<<'\n';flush(out);
          std::ofstream smt(dir/"compiled.smt2");z3::solver export_only(f.ctx);export_only.add(problem.compiled_formula);smt<<export_only.to_smt2();flush(smt);stats.times["structure_write"]=budget.elapsed()-t;}
         t=budget.elapsed();z3::solver solver(f.ctx,z3::solver::simple{});solver.add(problem.compiled_formula);solver.set("random_seed",seed);
         Coverage coverage(f);SolveBudgetState control;control.fixed_levels=true;std::set<std::string> seen;
         stats.times["solver_initialization"]=budget.elapsed()-t;
-        {std::ofstream out(dir/"initial.json");out<<std::setprecision(17)<<"{\"mode\":"<<quote(mode)<<",\"seed\":"<<seed
+        {std::ofstream out(dir/"initial.json");out<<std::setprecision(17)<<"{\"mode\":"<<quote(mode)<<",\"effective_mode\":"<<quote(compile_mode_name(selected))<<",\"seed\":"<<seed
             <<",\"seconds\":"<<budget.seconds<<",\"source_sha256\":"<<quote(LIA_SOURCE_SHA)<<",\"initialized_seconds\":"<<budget.elapsed()
             <<",\"total_bits\":"<<f.total_bits()<<",\"original_variables\":"<<f.variables.size()<<",\"solver\":\"simple_persistent\",\"timeout_levels_ms\":[50,200,1000,2000]}\n";flush(out);}
         unsigned long query=0,formal=0,marginal_sum=0;std::string terminal="deadline";double first_sat=-1;

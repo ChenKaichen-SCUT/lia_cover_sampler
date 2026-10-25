@@ -2,6 +2,13 @@
 #include "core.hpp"
 
 namespace lia {
+enum class CompileMode { Plain, SimplifyOnly, EqOnly, ChoiceOnly, Full };
+CompileMode parse_compile_mode(const std::string &);
+std::string compile_mode_name(CompileMode);
+struct CompilerStage {
+    size_t entries=0, operations=0, scanned_nodes=0, commits=0, skips=0;
+    double exclusive_seconds=0;
+};
 struct ChoiceCompileLimits {
     double seconds = 5.;
     size_t max_operations = 2000000, max_dag_nodes = 100000;
@@ -24,9 +31,14 @@ struct CompiledProblem {
     std::vector<std::string> rewrite_evidence;
     std::set<unsigned> eliminated;
     Stats statistics;
+    CompileMode mode;
+    std::map<std::string,CompilerStage> stages;
+    std::string interrupted_stage, structure;
+    std::vector<std::string> transactions, candidate_passes;
     std::string stop_reason = "complete";
     ChoiceCompileLimits limits;
     explicit CompiledProblem(Formula &, bool enabled, Budget &, ChoiceCompileLimits = {});
+    explicit CompiledProblem(Formula &, CompileMode, Budget &, ChoiceCompileLimits = {});
     Assignment restore(z3::model) const;
     z3::model lift(const Assignment &) const;
     z3::expr block_original(const Assignment &) const;

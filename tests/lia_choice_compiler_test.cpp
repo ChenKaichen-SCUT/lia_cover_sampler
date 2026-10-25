@@ -25,6 +25,12 @@ static void compare(const std::string &text,size_t expected,ChoiceCompileLimits 
     auto path=input(text);Formula f(path);Budget b;b.seconds=30;
     CompiledProblem plain(f,false,b),compiled(f,true,b,limits);
     auto before=enumerate(f,plain),after=enumerate(f,compiled);
+    for(auto mode:{CompileMode::Plain,CompileMode::SimplifyOnly,CompileMode::EqOnly,CompileMode::ChoiceOnly}){
+        CompiledProblem independent(f,mode,b,limits);check(enumerate(f,independent)==before,"ablation model set");
+        if(mode==CompileMode::EqOnly || mode==CompileMode::SimplifyOnly || mode==CompileMode::Plain)check(independent.choices.empty(),"mode leaked choice encoding");
+        if(mode==CompileMode::ChoiceOnly || mode==CompileMode::SimplifyOnly || mode==CompileMode::Plain)check(independent.statistics.counts["unit_equation_eliminations"]==0,"mode leaked elimination");
+        if(mode==CompileMode::SimplifyOnly)check(independent.solving_variables.size()==f.variables.size(),"simplify loses free original variables");
+    }
     if(before!=after){std::cerr<<text<<"\n"<<compiled.json()<<"\nbefore:";for(auto &x:before)std::cerr<<x<<";";std::cerr<<"\nafter:";for(auto &x:after)std::cerr<<x<<";";throw std::runtime_error("full original model sets differ");}check(before.size()==expected,"unexpected model count");
     // Surjectivity is tested from EVERY original model, not just compiled witnesses.
     z3::solver s(f.ctx);s.add(f.root);
@@ -55,6 +61,10 @@ int main(){try{
     ChoiceCompileLimits big;big.max_coefficient_bits=3;compare("(declare-const x Int)(assert (or (= x 100)(= x 200)))",2,big);
     auto path=input("(declare-const x Int)(declare-const y Int)(assert (or (and (= x 2)(= y 3))(and (= x 7)(= y 8))))");
     Formula f(path);Budget b;b.seconds=2;CompiledProblem p(f,true,b);check(p.choices.size()==1&&p.solving_variables.size()==1,"group requires one shared choice");
+    CompiledProblem eq(f,CompileMode::EqOnly,b), choice(f,CompileMode::ChoiceOnly,b);
+    check(eq.compiled_formula.to_string().find("(or ")!=std::string::npos,"eq-only removed explicit choice OR");
+    check(choice.statistics.counts["unit_equation_eliminations"]==0,"choice-only elimination");
+    check(parse_compile_mode("choice_compiled")==CompileMode::Full,"compatibility alias");
     std::filesystem::remove(path);
     std::cout<<"21 complete-model-set and structural regression cases passed\n";return 0;
 }catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}

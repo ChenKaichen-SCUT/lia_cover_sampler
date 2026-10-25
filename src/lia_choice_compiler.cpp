@@ -6,32 +6,43 @@
 
 namespace lia {
 namespace {
+size_t dag(const std::vector<z3::expr>&,std::map<unsigned,z3::expr>*,unsigned*);
 struct CompileStop { std::string reason; };
 struct Linear { std::map<unsigned,Z> terms; Z constant=0; };
 struct Compiler {
     CompiledProblem &out;
     Formula &f;
     Budget local;
-    size_t operations=0;
+    size_t operations=0, last_scan_nodes=0, committed_nodes=0;
+    std::string active="compiler_control";
+    Clock::time_point stage_start=Clock::now();
+    struct Stage {
+        Compiler &c; std::string previous;
+        Stage(Compiler &v,const std::string &name):c(v),previous(v.active) {
+            auto now=Clock::now();c.out.stages[c.active].exclusive_seconds+=std::chrono::duration<double>(now-c.stage_start).count();
+            c.active=name;++c.out.stages[name].entries;c.stage_start=now;
+        }
+        ~Stage(){auto now=Clock::now();c.out.stages[c.active].exclusive_seconds+=std::chrono::duration<double>(now-c.stage_start).count();c.active=previous;c.stage_start=now;}
+    };
     std::vector<z3::expr> clauses;
     std::map<unsigned,unsigned> originals;
     std::map<unsigned,z3::expr> symbols;
     std::map<unsigned,std::optional<Linear>> linear_cache;
     std::map<unsigned,z3::expr> linear_owners; // AST ids may be recycled after temporaries die.
     explicit Compiler(CompiledProblem &o,Budget &parent):out(o),f(o.original_formula) {
-        local.seconds=o.limits.seconds;local.parent=&parent;
+        local.seconds=o.limits.seconds;local.parent=&parent;committed_nodes=dag({f.root},nullptr,nullptr);
         for(unsigned i=0;i<f.variables.size();++i) {
             auto e=f.nodes[f.variables[i]].expr;
             originals.emplace(e.id(),i);symbols.emplace(e.id(),e);
         }
     }
     void tick(size_t count=1) {
-        operations+=count;
+        operations+=count;out.stages[active].operations+=count;out.interrupted_stage=active;
         if(operations>out.limits.max_operations) throw CompileStop{"operation_limit"};
         if(local.done()) throw CompileStop{interrupted?"cancelled":"compile_deadline"};
     }
     void flatten(z3::expr e,std::vector<z3::expr> &dst) {
-        tick();
+        Stage stage(*this,"flatten");tick();++out.stages[active].scanned_nodes;
         if(e.is_and()) for(unsigned i=0;i<e.num_args();++i) flatten(e.arg(i),dst);
         else dst.push_back(e);
     }
@@ -70,7 +81,7 @@ struct Compiler {
         check(a.constant);for(auto &[_,c]:a.terms)check(c);
     }
     std::optional<Linear> linear(z3::expr e) {
-        tick();linear_owners.emplace(e.id(),e);auto found=linear_cache.find(e.id());if(found!=linear_cache.end())return found->second;
+        Stage stage(*this,"linearization");++out.stages[active].scanned_nodes;tick();linear_owners.emplace(e.id(),e);auto found=linear_cache.find(e.id());if(found!=linear_cache.end())return found->second;
         std::optional<Linear> result;
         if(e.is_int()) {
             Z z;
@@ -108,7 +119,7 @@ struct Compiler {
         unsigned bits=0;
         while(!todo.empty()) {
             if(limits)tick();
-            auto e=todo.back();todo.pop_back();
+            auto e=todo.back();todo.pop_back();++out.stages[active].scanned_nodes;
             if(e.is_const() && e.decl().decl_kind()==Z3_OP_UNINTERPRETED)++references[e.id()];
             if(!seen.insert(e.id()).second)continue;
             if(e.is_int() && e.is_numeral()) {
@@ -116,29 +127,44 @@ struct Compiler {
             }
             for(unsigned i=0;i<e.num_args();++i)todo.push_back(e.arg(i));
         }
+        last_scan_nodes=seen.size();
         if(limits && (seen.size()>out.limits.max_dag_nodes || seen.size()>2*f.nodes.size()+1024))throw CompileStop{"dag_growth"};
         if(limits && bits>out.limits.max_coefficient_bits)throw CompileStop{"coefficient_bits"};
         return references;
     }
     void substitute_transaction(const z3::expr_vector &from,const z3::expr_vector &to,
                                 size_t source,const std::vector<z3::expr>&extra) {
+        const auto began=Clock::now();const auto before=committed_nodes;
         tick();std::vector<z3::expr> next_clauses,next_recovery;
         for(size_t i=0;i<clauses.size();++i) {
-            tick();next_clauses.push_back(i==source?f.ctx.bool_val(true):clauses[i].substitute(from,to).simplify());
+            tick();auto e=f.ctx.bool_val(true);
+            if(i!=source){
+                {Stage stage(*this,"global_substitute");++out.stages[active].scanned_nodes;e=clauses[i].substitute(from,to);}
+                {Stage stage(*this,"global_simplify");++out.stages[active].scanned_nodes;e=e.simplify();}
+            }
+            next_clauses.push_back(e);
         }
         for(auto e:extra)next_clauses.push_back(e);
-        for(auto r:out.reconstruction_map){tick();next_recovery.push_back(r.substitute(from,to).simplify());}
+        {Stage stage(*this,"recovery_update");
+         for(auto r:out.reconstruction_map){tick();++out.stages[active].scanned_nodes;next_recovery.push_back(r.substitute(from,to).simplify());}}
         auto roots=next_clauses;roots.insert(roots.end(),next_recovery.begin(),next_recovery.end());
-        scan(roots);tick();
+        {Stage stage(*this,"combined_dag_check");scan(roots);}tick();
         z3::expr_vector conjuncts(f.ctx);for(auto e:next_clauses)if(!e.is_true())conjuncts.push_back(e);
         auto next_formula=z3::mk_and(conjuncts);tick();
         // Publish formula and full recovery together, only after all limits pass.
         out.compiled_formula=next_formula;clauses.swap(next_clauses);
-        out.reconstruction_map.swap(next_recovery);
+        out.reconstruction_map.swap(next_recovery);++out.stages[active].commits;
+        committed_nodes=last_scan_nodes;
+        std::ostringstream evidence;evidence<<std::setprecision(17)<<"{\"stage\":"<<quote(active)<<",\"source_clause\":"<<source
+          <<",\"before_combined_nodes\":"<<before<<",\"after_combined_nodes\":"<<committed_nodes
+          <<",\"actual_growth\":"<<(static_cast<long long>(committed_nodes)-static_cast<long long>(before))
+          <<",\"seconds\":"<<std::chrono::duration<double>(Clock::now()-began).count()<<"}";
+        out.transactions.push_back(evidence.str());
     }
     void encode_choices() {
         struct Proposal {size_t clause;std::map<unsigned,Z>a,b;};
         std::vector<Proposal> proposals;
+        {Stage stage(*this,"choice_recognition");
         for(size_t j=0;j<clauses.size();++j) {
             auto e=clauses[j];tick();if(!e.is_or()||e.num_args()!=2)continue;
             Proposal p{j,{},{}};
@@ -146,6 +172,8 @@ struct Compiler {
             bool same=true;for(auto &[v,_]:p.a)if(!p.b.count(v))same=false;
             if(same){proposals.push_back(p);++out.statistics.counts["recognized_choice_groups"];}
         }
+        }
+        Stage stage(*this,"choice_replacement");
         for(auto &p:proposals) {
             tick();bool overlap=false;for(auto &[v,_]:p.a)overlap|=out.eliminated.count(v)>0;
             if(overlap){++out.statistics.counts["overlapping_groups_retained"];continue;}
@@ -180,27 +208,37 @@ struct Compiler {
     }
     void eliminate() {
         while(out.statistics.counts["unit_equation_eliminations"]<out.limits.max_eliminations) {
+            Stage stage(*this,"unit_candidate_search");const auto pass_start=Clock::now();
+            std::map<std::string,size_t> reasons;
             tick();linear_cache.clear();linear_owners.clear();auto roots=clauses;
             roots.insert(roots.end(),out.reconstruction_map.begin(),out.reconstruction_map.end());
-            auto references=scan(roots);
+            std::map<unsigned,unsigned> references;{Stage scan_stage(*this,"reference_scan");references=scan(roots);}
             struct Pick {size_t clause;unsigned variable;Linear row;};
             std::optional<Pick> best;
             std::tuple<size_t,unsigned,size_t,unsigned,size_t> best_cost;
             for(size_t j=0;j<clauses.size();++j) {
-                auto e=clauses[j];tick();if(!e.is_eq()||e.num_args()!=2||!e.arg(0).is_int())continue;
-                auto a=linear(e.arg(0)),b=linear(e.arg(1));if(!a||!b)continue;add(*a,*b,-1);
-                if(a->terms.empty() || a->terms.size()>out.limits.max_row_terms)continue;
+                auto e=clauses[j];tick();++out.stages[active].scanned_nodes;if(!e.is_eq()||e.num_args()!=2||!e.arg(0).is_int())continue;
+                auto a=linear(e.arg(0)),b=linear(e.arg(1));if(!a||!b){++reasons["unsupported_linear"];continue;}add(*a,*b,-1);
+                if(a->terms.empty()){++reasons["constant_row"];continue;}
+                if(a->terms.size()>out.limits.max_row_terms){++reasons["row_width"];continue;}
                 for(auto &[symbol,coefficient]:a->terms) {
-                    if(coefficient!=1 && coefficient!=-1)continue;
-                    auto v=originals.find(symbol);if(v==originals.end()||out.eliminated.count(v->second))continue;
+                    if(coefficient!=1 && coefficient!=-1){++reasons["non_unit_coefficient"];continue;}
+                    auto v=originals.find(symbol);if(v==originals.end()||out.eliminated.count(v->second)){++reasons["not_retained_original"];continue;}
                     unsigned refs=references[symbol];size_t width=a->terms.size()-1;
                     size_t growth=width? (width-1)*refs:0;
-                    if(refs>out.limits.max_references||growth>out.limits.max_term_growth)continue;
+                    if(refs>out.limits.max_references){++reasons["reference_limit"];continue;}
+                    if(growth>out.limits.max_term_growth){++reasons["growth_limit"];continue;}
+                    ++reasons["eligible_pivot_occurrences"];
                     auto cost=std::make_tuple(width,refs,growth,v->second,j);
                     if(!best||cost<best_cost){best=Pick{j,v->second,*a};best_cost=cost;}
                 }
             }
-            if(!best)return;
+            {std::ostringstream pass;pass<<std::setprecision(17)<<"{\"pass\":"<<out.candidate_passes.size()<<",\"search_seconds\":"<<std::chrono::duration<double>(Clock::now()-pass_start).count()<<",\"reasons\":{";
+             bool comma=false;for(auto &[name,count]:reasons){if(comma)pass<<',';comma=true;pass<<quote(name)<<':'<<count;out.statistics.counts["candidate_"+name]+=count;}
+             pass<<"},\"selected\":"<<(best?"true":"false");
+             if(best)pass<<",\"variable_index\":"<<best->variable<<",\"source_clause\":"<<best->clause<<",\"replacement_width\":"<<std::get<0>(best_cost)<<",\"references\":"<<std::get<1>(best_cost)<<",\"estimated_growth\":"<<std::get<2>(best_cost)<<",\"selection_rule\":\"lexicographic(width,references,growth,original_index,clause_index)\"";
+             pass<<"}";out.candidate_passes.push_back(pass.str());}
+            if(!best){++out.statistics.counts["no_eligible_pivot_pass"];return;}
             auto variable=f.nodes[f.variables[best->variable]].expr;
             Z scale=-best->row.terms.at(variable.id());
             Z c=scale*best->row.constant;auto rhs=f.ctx.int_val(c.get_str().c_str());
@@ -219,8 +257,15 @@ struct Compiler {
         throw CompileStop{"elimination_cap"};
     }
     void run() {
-        try{flatten(f.root,clauses);encode_choices();eliminate();}
-        catch(const CompileStop &s){out.stop_reason=s.reason;}
+        try{
+            if(out.mode==CompileMode::SimplifyOnly){Stage stage(*this,"global_simplify");tick();auto next=f.root.simplify();tick();out.compiled_formula=next;++out.stages[active].commits;}
+            else {flatten(f.root,clauses);
+                if(out.mode==CompileMode::ChoiceOnly || out.mode==CompileMode::Full)encode_choices();
+                if(out.mode==CompileMode::EqOnly || out.mode==CompileMode::Full)eliminate();}
+            out.interrupted_stage.clear();
+        }
+        catch(const CompileStop &s){out.stop_reason=s.reason;++out.stages[out.interrupted_stage].skips;}
+        out.stages[active].exclusive_seconds+=std::chrono::duration<double>(Clock::now()-stage_start).count();
         out.statistics.counts["compiler_operations"]=operations;
     }
 };
@@ -235,11 +280,19 @@ size_t dag(const std::vector<z3::expr>&roots,std::map<unsigned,z3::expr>*variabl
     return seen.size();
 }
 }
+CompileMode parse_compile_mode(const std::string &s){
+    if(s=="plain")return CompileMode::Plain;if(s=="simplify_only")return CompileMode::SimplifyOnly;
+    if(s=="eq_only")return CompileMode::EqOnly;if(s=="choice_only")return CompileMode::ChoiceOnly;
+    if(s=="full"||s=="choice_compiled")return CompileMode::Full;throw std::invalid_argument("unknown compilation mode");
+}
+std::string compile_mode_name(CompileMode m){switch(m){case CompileMode::Plain:return "plain";case CompileMode::SimplifyOnly:return "simplify_only";case CompileMode::EqOnly:return "eq_only";case CompileMode::ChoiceOnly:return "choice_only";case CompileMode::Full:return "full";}throw std::logic_error("compile mode");}
 CompiledProblem::CompiledProblem(Formula &f,bool enabled,Budget &budget,ChoiceCompileLimits policy)
-    :original_formula(f),compiled_formula(f.root),limits(policy) {
+    :CompiledProblem(f,enabled?CompileMode::Full:CompileMode::Plain,budget,policy){}
+CompiledProblem::CompiledProblem(Formula &f,CompileMode selected,Budget &budget,ChoiceCompileLimits policy)
+    :original_formula(f),compiled_formula(f.root),mode(selected),limits(policy) {
     auto start=Clock::now();
     for(auto n:f.variables)reconstruction_map.push_back(f.nodes[n].expr);
-    if(enabled){Compiler compiler(*this,budget);compiler.run();}else stop_reason="disabled";
+    if(mode!=CompileMode::Plain){Compiler compiler(*this,budget);compiler.run();}else stop_reason="disabled";
     auto roots=reconstruction_map;roots.push_back(compiled_formula);std::map<unsigned,z3::expr> vars;unsigned bits=0;
     statistics.counts["combined_dag_nodes"]=dag(roots,&vars,&bits);
     for(auto &[_,v]:vars)solving_variables.push_back(v);
@@ -276,12 +329,16 @@ z3::expr CompiledProblem::block_original(const Assignment &a) const {
     return z3::mk_or(terms);
 }
 std::string CompiledProblem::json() const {
-    std::ostringstream o;o<<std::setprecision(17)<<"{\"stop_reason\":"<<quote(stop_reason)<<",\"statistics\":"<<statistics.json()
+    std::ostringstream o;o<<std::setprecision(17)<<"{\"mode\":"<<quote(compile_mode_name(mode))<<",\"simplify_parameters\":\"Z3 default parameters; no overrides\",\"interrupted_stage\":"<<quote(interrupted_stage)<<",\"stop_reason\":"<<quote(stop_reason)<<",\"statistics\":"<<statistics.json()
       <<",\"limits\":{\"seconds\":"<<limits.seconds<<",\"operations\":"<<limits.max_operations<<",\"dag_nodes\":"<<limits.max_dag_nodes
       <<",\"coefficient_bits\":"<<limits.max_coefficient_bits<<",\"eliminations\":"<<limits.max_eliminations
       <<",\"row_terms\":"<<limits.max_row_terms<<",\"references\":"<<limits.max_references<<",\"term_growth\":"<<limits.max_term_growth<<"},\"reconstruction\":[";
     for(size_t i=0;i<reconstruction_map.size();++i){if(i)o<<',';o<<"{\"original\":"<<quote(original_formula.nodes[original_formula.variables[i]].expr.to_string())<<",\"expression\":"<<quote(reconstruction_map[i].to_string())<<"}";}
     o<<"],\"rewrites\":[";for(size_t i=0;i<rewrite_evidence.size();++i){if(i)o<<',';o<<rewrite_evidence[i];}
+    o<<"],\"stage_accounting\":\"exclusive wall seconds and existing tick operations; native substitute/simplify visits unavailable; scanned_nodes for these are expression roots\",\"stages\":{";
+    bool comma=false;for(auto &[name,v]:stages){if(comma)o<<',';comma=true;o<<quote(name)<<":{\"entries\":"<<v.entries<<",\"operations\":"<<v.operations<<",\"scanned_nodes\":"<<v.scanned_nodes<<",\"exclusive_seconds\":"<<v.exclusive_seconds<<",\"commits\":"<<v.commits<<",\"skips\":"<<v.skips<<"}";}
+    o<<"},\"transactions\":[";for(size_t i=0;i<transactions.size();++i){if(i)o<<',';o<<transactions[i];}
+    o<<"],\"candidate_passes\":[";for(size_t i=0;i<candidate_passes.size();++i){if(i)o<<',';o<<candidate_passes[i];}
     return o.str()+"]}";
 }
 }
