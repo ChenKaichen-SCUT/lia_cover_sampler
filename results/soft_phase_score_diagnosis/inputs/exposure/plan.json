@@ -1,0 +1,222 @@
+{
+  "schema": 1,
+  "kind": "exposure",
+  "seconds": 30.0,
+  "seeds": [
+    0
+  ],
+  "configurations": [
+    "plain",
+    "random_soft",
+    "coverage_soft"
+  ],
+  "cores": [
+    0,
+    2,
+    4,
+    6,
+    8,
+    10,
+    12,
+    14,
+    1,
+    3,
+    5,
+    7,
+    9,
+    11,
+    13
+  ],
+  "cpu_topology": [
+    {
+      "cpu": 0,
+      "package": "0",
+      "physical_core": "0"
+    },
+    {
+      "cpu": 2,
+      "package": "0",
+      "physical_core": "1"
+    },
+    {
+      "cpu": 4,
+      "package": "0",
+      "physical_core": "2"
+    },
+    {
+      "cpu": 6,
+      "package": "0",
+      "physical_core": "3"
+    },
+    {
+      "cpu": 8,
+      "package": "0",
+      "physical_core": "4"
+    },
+    {
+      "cpu": 10,
+      "package": "0",
+      "physical_core": "5"
+    },
+    {
+      "cpu": 12,
+      "package": "0",
+      "physical_core": "6"
+    },
+    {
+      "cpu": 14,
+      "package": "0",
+      "physical_core": "7"
+    },
+    {
+      "cpu": 1,
+      "package": "0",
+      "physical_core": "0"
+    },
+    {
+      "cpu": 3,
+      "package": "0",
+      "physical_core": "1"
+    },
+    {
+      "cpu": 5,
+      "package": "0",
+      "physical_core": "2"
+    },
+    {
+      "cpu": 7,
+      "package": "0",
+      "physical_core": "3"
+    },
+    {
+      "cpu": 9,
+      "package": "0",
+      "physical_core": "4"
+    },
+    {
+      "cpu": 11,
+      "package": "0",
+      "physical_core": "5"
+    },
+    {
+      "cpu": 13,
+      "package": "0",
+      "physical_core": "6"
+    }
+  ],
+  "group_slots": [
+    [
+      0,
+      2,
+      4
+    ],
+    [
+      6,
+      8,
+      10
+    ],
+    [
+      12,
+      14,
+      1
+    ],
+    [
+      3,
+      5,
+      7
+    ],
+    [
+      9,
+      11,
+      13
+    ]
+  ],
+  "max_concurrent_sessions": 15,
+  "max_concurrent_groups": 5,
+  "controller_core": 15,
+  "concurrency_authority": "user explicitly requested full 15-way concurrency; synchronized means within-triplet",
+  "inputs": [
+    {
+      "name": "SMT_random_LIA_ex14600_2600_100.smt2",
+      "sha256": "114fb8ac7228c36cc6124bd9f2d95fd16a3bf2d330c39e185e8145d56821de1f",
+      "path": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/soft_phase_exposure/inputs/SMT_random_LIA_ex14600_2600_100.smt2"
+    },
+    {
+      "name": "SMT_real_LIA_ex8500_2400_100.smt2",
+      "sha256": "9ff3c643c1756057b1f127c5818bf38c468761ad3d2dd742cf34e3511e0690ec",
+      "path": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/soft_phase_exposure/inputs/SMT_real_LIA_ex8500_2400_100.smt2"
+    }
+  ],
+  "files": {
+    "build/soft_phase/release/soft_phase_sampler": "66a338d0a68d6800bdb67234014efc3904dcc6ee319532def479f97119153f12",
+    "dependencies/patches/z3_soft_phase.patch": "f22b68419792d917d103efbe0d08c313a0bebf5f4d1ef69dc2bfebfff925c7f8",
+    "dependencies/soft_phase_build.json": "6dae6bde435fd243d81a5ae11d5f30946b39b46fc1f227ac244fbe4a4e50b8f9",
+    "scripts/run_soft_phase_pairs.py": "41c41f04fbff3436a62849294397b18f5514d4932124c4d3ccae9c923e96a5d8",
+    "scripts/audit_soft_phase_results.py": "fc3715d30bcff31ab438f6fbff6ddc8fdd719aead9e2329e070aa9133475deaa",
+    "scripts/analyze_soft_phase_results.py": "02b584b27f041a7bae4e1210f685b71ff3ca341119b3dd293d8cc85f88049ed7",
+    "CMakeLists.txt": "ef3bcb23200ce753eb043a5b922273ab3d5af007aff5db411509ee32417f2202",
+    "docs/覆盖软偏好实验协议.md": "ab0751d625014c2d7334256877ebb71fc5f58b69bb8c8a332325b1e81886942f",
+    "src/ab_adapter.cpp": "4e8e141568c9a7be423cbfd57ad3c223eb34a689b1ea6cf1218dfc850e984354",
+    "src/ab_replay.cpp": "93e8fff0fe54a38d0f2cb1a82e5fcf59ee5d4aee2f85d86b13adb4686c0b3bf6",
+    "src/bofill_first_sat_probe.cpp": "29651f6bc78c4d186a1e0ddf3b44bd5645a834af76df45bdaa3e46979715846a",
+    "src/bofill_sampler.cpp": "b91a335c082e6b56e34a0066ee1dd9a655a1ecfa0d6ddb78aaeeef0d2e60c110",
+    "src/choice_catalog_probe.cpp": "035e435243cceb154be7ab5a0c31905fc1b2a82541d2ca26245eb486d7fd91e7",
+    "src/conditional_observation.cpp": "30299fb34069cb62e9e61445d595a374e85340ca0166d5ee8f7680c154aa16c7",
+    "src/control.cpp": "bd746304f0b81ae87e724ddedf47d02ab57ac9e95af9651e3b6ed6b8fa3c51aa",
+    "src/core.cpp": "fdb6c10a7aa459a41e735fa221b8b0648fa04412acf24a4a0ee9e2ea0a4ca573",
+    "src/coverage_block_generator.cpp": "3046ccc88cb04964d1c82daeef31dfecbeed52eab798a44229dd4621315c9207",
+    "src/coverage_block_probe.cpp": "08fd03690d2b816de2b2df3b55e0c09967a183b8692199900d9250b0edacc1a7",
+    "src/global.cpp": "ae41106c429f470cb124d59004d42c1e655ee21abefcecad1ad4073638f506d0",
+    "src/lia_choice_compiler.cpp": "ce640453e9796275f1e94d9c9679c0711d65e2771fe87ac26449e6ef119605f8",
+    "src/line.cpp": "1dadfcb61cd0a4851c0b27abf4c5bcef1f0ee641a9234a6d191882c40cbfcb52",
+    "src/local.cpp": "085eab8894bab1a1c1da42fdf749f4beb50834eb79bd68a3985719cab8b38e4f",
+    "src/macro_choice.cpp": "327b9dd6a15f8175d9f40d73c8ef51d5dcd606f2b8162ea40268ee690d2a57d3",
+    "src/macro_diagnostic_probe.cpp": "9c696272829bec3d388a80f3d2d938bda158ec9d924bd022ddba3ec4a91e55a1",
+    "src/macro_online_probe.cpp": "c43ac265b47b1c4d8852121009969f336b1a478a11cb47c667ea14643f62c278",
+    "src/macro_retry_probe.cpp": "57b47f6c44bee05968c41e98ee8b4af2e69d15a1d890a8c64588bbc8bc71ac3c",
+    "src/main.cpp": "637cdd2de863680806e7af314a9e15afc621596b380c32b274d9f5339b3fe624",
+    "src/output_refiner.cpp": "6219c7eebfdd16d4f7f165158c9b484737738641df7108ea2bcb73d98553740e",
+    "src/plateau_tracker.cpp": "b071c98ca48ac17ea3e67b06deccb1d8d5710bd39875e6e66a450ba5faca36d4",
+    "src/preparation_probe.cpp": "69c9cfc6178bca530330a95a74892824eb5b46ac62569dfa50de7a5cd1520ef7",
+    "src/residual_coverage.cpp": "ac4d5e5499b51a5bd9a9a508bc03690f122d3ca14b64427e47f8fa53a6e2e799",
+    "src/residual_online_probe.cpp": "de6baa288d13e3075cf6d03ffa4a66bac01a4ba219776cb5e7def4f57ce500f6",
+    "src/scheduler.cpp": "68a0cd406778ac12be6b3c5702decf12c8bc76d1462e5282956e7e796d952682",
+    "src/search.cpp": "8b13a6453cfb2509fb43517b45322dd2d220dd7b1d9695687c1ded17af054f84",
+    "src/snapshot_probe.cpp": "f001454b3e85559b729ea3284135a03fbf00574d5f39e9ab1cbdd03a46a444e1",
+    "src/soft_phase_bridge.cpp": "923078a0593e30fa437ace244233b5e598d7402b3be55509d5212add87105983",
+    "src/soft_phase_sampler.cpp": "673c81be761d1ecbec7d9124671c7cc99803a49fe292c9074952ccdb5a2f5320",
+    "src/stream.cpp": "ee2f2c73ba0982b4821b445a3565a12f541ac8101108984b8b65fd907eb58ed7",
+    "include/ab_output.hpp": "2fb804fe5c4396d7864afacfadd6a3cb37ed818b5e5fc77b8b323194cfb181f3",
+    "include/bofill_session.hpp": "174627e8a8ff6f27aabb45c1aaec587e609e150d961b79c6a74638b0f7283f83",
+    "include/conditional_observation.hpp": "4112d03a5f472d9819ed54418fb9c971c61556d9cd0ea9e0679b8ee0e5c45d0e",
+    "include/core.hpp": "51cc1871956542ee2c41a9f46c75eeb783eb0e4c7d637f439b0c3e483c4255d9",
+    "include/coverage_block_generator.hpp": "8b48c39130fcf652c1d556c882f6002c26b5ce390acc5e77824d36354d47da10",
+    "include/diagnostics.hpp": "801c06d19490a535257d6d6f6099b3698049c180c49e0ca92f32368155d260d5",
+    "include/lia_choice_compiler.hpp": "9078352cbccbc798ace8c9ef7e2b25d58559debe25c7635b46e5b21d6b61cfc1",
+    "include/line.hpp": "b6964d077d17bd05355b056addfe17dc8692d38a2dd15f67ae5e63dc83107151",
+    "include/macro_choice.hpp": "1432f56bc97f122079c33c633b12cc8ad914f33f8e4af27e617641f6de5bc25b",
+    "include/math.hpp": "8e2ef3cc8f356bd7365b778acba3adffdff35947a31be73880e02ab3b5fdc8a4",
+    "include/observation_preservation.hpp": "567559aaec3543a4bcaebd435741794f5b16f678081b2e53f7e038f97fa7b870",
+    "include/output_refiner_api.hpp": "501e15510442cb9772d97aa6a29aecce9ec3c291658b9d9d3b41f5d731e959c2",
+    "include/plateau_tracker.hpp": "c09f3958fd44aa6d0718948d63b1952cd53d46c6cee5d8423c0a456c0004e565",
+    "include/residual_coverage.hpp": "7d104ffb31bfc056e677a1be9dc606662b206cadc841e6a88d1f6ee5b0736298",
+    "include/scheduler.hpp": "2d5efb3b52c948ea1009ba4c8b089bd751c728f2db27d4bc84a20b35744199a8",
+    "include/search.hpp": "ff6e75c1562671f8c1ba1f7c7519a94c1a5ceaaf7fe6da6003818ebcb24e39d7",
+    "include/soft_phase_bridge.hpp": "c1915f1f54a263dd1e59dcfd54be5ccb36c083f33909567bce06eb9852cc758a",
+    "include/wall.hpp": "1d57710b0b5ab8f6fd4f51727d37735f1a2c67e622676e72c1a8494e364b7ee2"
+  },
+  "git_commit": "62ee427faf4f93cb8d589eaf5bf5b4af27e149fb",
+  "git_status": "",
+  "z3_sha256": "70c45a4ef5945cdd5e3ab35de1a1895b73de3e3668161aa19b12a0180285661d",
+  "created_utc": "2026-10-25T10:38:00.842543+00:00",
+  "limits": {
+    "address_space_gib": 6,
+    "per_file_gib": 1,
+    "cleanup_grace_seconds": 2,
+    "model_count_cap": null
+  },
+  "environment": "Architecture:                         x86_64\nCPU op-mode(s):                       32-bit, 64-bit\nAddress sizes:                        39 bits physical, 48 bits virtual\nByte Order:                           Little Endian\nCPU(s):                               16\nOn-line CPU(s) list:                  0-15\nVendor ID:                            GenuineIntel\nModel name:                           13th Gen Intel(R) Core(TM) i7-13700F\nCPU family:                           6\nModel:                                183\nThread(s) per core:                   2\nCore(s) per socket:                   8\nSocket(s):                            1\nStepping:                             1\nBogoMIPS:                             4223.99\nFlags:                                fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology tsc_reliable nonstop_tsc cpuid tsc_known_freq pni pclmulqdq vmx ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves avx_vnni vnmi umip waitpkg gfni vaes vpclmulqdq rdpid movdiri movdir64b fsrm md_clear serialize flush_l1d arch_capabilities\nVirtualization:                       VT-x\nHypervisor vendor:                    Microsoft\nVirtualization type:                  full\nL1d cache:                            384 KiB (8 instances)\nL1i cache:                            256 KiB (8 instances)\nL2 cache:                             16 MiB (8 instances)\nL3 cache:                             30 MiB (1 instance)\nNUMA node(s):                         1\nNUMA node0 CPU(s):                    0-15\nVulnerability Gather data sampling:   Not affected\nVulnerability Itlb multihit:          Not affected\nVulnerability L1tf:                   Not affected\nVulnerability Mds:                    Not affected\nVulnerability Meltdown:               Not affected\nVulnerability Mmio stale data:        Not affected\nVulnerability Reg file data sampling: Vulnerable: No microcode\nVulnerability Retbleed:               Mitigation; Enhanced IBRS\nVulnerability Spec rstack overflow:   Not affected\nVulnerability Spec store bypass:      Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:             Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:             Mitigation; Enhanced / Automatic IBRS; IBPB conditional; RSB filling; PBRSB-eIBRS SW sequence; BHI BHI_DIS_S\nVulnerability Srbds:                  Not affected\nVulnerability Tsx async abort:        Not affected\n",
+  "memory": "MemTotal:       30802100 kB\nMemFree:        25231640 kB\nMemAvailable:   28233024 kB\nBuffers:            3500 kB\nCached:           947896 kB\nSwapCached:           60 kB\nActive:           471232 kB\nInactive:        2005056 kB\nActive(anon):       4776 kB\nInactive(anon):  1549168 kB\nActive(file):     466456 kB\nInactive(file):   455888 kB\nUnevictable:          64 kB\nMlocked:              64 kB\nSwapTotal:      33554432 kB\nSwapFree:       33552104 kB\nDirty:                 0 kB\nWriteback:             0 kB\nAnonPages:       1524776 kB\nMapped:           787608 kB\nShmem:             28944 kB\nKReclaimable:    2442284 kB\nSlab:            2712780 kB\nSReclaimable:    2442284 kB\nSUnreclaim:       270496 kB\nKernelStack:       14164 kB\nPageTables:        30148 kB\nSecPageTables:         0 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    48955480 kB\nCommitted_AS:    6162468 kB\nVmallocTotal:   34359738367 kB\nVmallocUsed:       69188 kB\nVmallocChunk:          0 kB\nPercpu:             9024 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:         0 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:         0 kB\nFilePmdMapped:         0 kB\nUnaccepted:            0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\nDirectMap4k:      121856 kB\nDirectMap2M:    13508608 kB\nDirectMap1G:    27262976 kB\n",
+  "library_links": "\tlinux-vdso.so.1 (0x00007ffd761a6000)\n\tlibz3.so => /mnt/Space0/SMT_Sampling/lia_cover_sampler/dependencies/z3-soft-phase/install/lib/libz3.so (0x0000769bf401f000)\n\tlibgmp.so.10 => /lib/x86_64-linux-gnu/libgmp.so.10 (0x0000769bf3f96000)\n\tlibstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x0000769bf3cf4000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x0000769bf3c0d000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x0000769bf3bdf000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000769bf39b4000)\n\t/lib64/ld-linux-x86-64.so.2 (0x0000769bf5dc4000)\n",
+  "highdiv_execution": "disabled; historical background only"
+}
