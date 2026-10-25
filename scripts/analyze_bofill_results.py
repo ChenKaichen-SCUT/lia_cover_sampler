@@ -67,6 +67,9 @@ def main():
     dest=out/'analysis';dest.mkdir(exist_ok=True)
     for name,rows in tables.items():write_csv(dest/name,rows)
     report=['# bofill 双实例 900 秒实验报告' if plan['seconds']==900 else '# bofill 短程正确性检查（不属于正式性能结论）','',f'归档：`{out.relative_to(Path(__file__).resolve().parents[1])}`。共同预算 {plan["seconds"]:g} 秒，{len(runs)} 次运行。全部原始输出已由冻结 ManualSatisfiesMetric 独立核验，审计没有调用求解器搜索。','', '本轮移除当前投影生成入口及构建依赖，保留历史审计。新增必要二选一常量组的整数选择编码、单位系数等式精确消元及完整原赋值恢复。plain_clean 与 choice_compiled 共用首次 SAT 到枚举结束的一个持久求解器；二者差异才对应编译表示，不能用历史入口数字归因。按用户启动前的最新指示，本轮不运行HighDiv；直接引用此前900秒已审计覆盖率，历史外层为-O0、seed 0，作为不同条件的参考，不加入本轮配对统计。','', 'SMT_real 原为 evaluation，现已用于本轮定向开发；结论不代表未接触评测或一般 bofill/LIA。两个实例、三个种子不是普遍性能证明。','']
+    if (out/'parallel_amendment.json').exists():
+        change=json.loads((out/'parallel_amendment.json').read_text())
+        report += ['## 用户要求的15槽并发变更','',f'本轮任务总数12，按用户要求使用最多{change["max_workers"]}个单线程任务槽，实际12个采样进程并行。已启动的random/seed-0两进程不中断，其余十个任务同时补启动；调整时间为{change["utc"]}。CPU 0–14共享，监督器使用CPU 15。原plan.json保留，实际变更以parallel_amendment.json为准。','', '首组前段曾处于两路负载，后段进入12路；其余组从12路开始。不能把这些条件说成全程固定三核或全程完全同步；逐seed保留结果，不通过重跑抹去变更。旧串行监督器只完成首组，后续目录由新控制器占用，旧控制器的目录碰撞退出是调度器替换，须与各sampler的退出状态区分。','']
     for formula in sorted({r['formula'] for r in runs}):
         selected=[r for r in runs if r['formula']==formula];report+=['## '+formula,'',table(['seed','配置','进程秒','不同合法模型','正增益模型','最终 covered/分母','覆盖率','首模型秒','最长无增长秒'],[[r['seed'],r['configuration'],number(r['process_wall_seconds'],3),r['distinct'],r['positive'],f'{r["covered"]}/{r["total"]}',number(r['coverage']*100,4)+'%',number(r['first_model_seconds'],3),number(r['longest_no_growth_seconds'],3)] for r in selected]),'']
         final=[r for r in pair_stats if r['formula']==formula and r['family']=='time' and r['point']==plan['seconds']]
@@ -84,7 +87,7 @@ def main():
     historical_path=out/'historical_highdiv.json'
     if historical_path.exists():
         historical=json.loads(historical_path.read_text());reference_rows=[];descriptive=[];historical_prefix=[]
-        report+=['## HighDiv历史覆盖参考（未重新运行）','', '按用户最新指示直接使用 results/highdiv_time900 的已审计900秒覆盖。历史仅seed 0，外层-O0，12工作槽、实际九例同时运行；当前两模式为Release、组内两路同步。它不是本轮同条件或多种子配对，不能据此声称公平速度提升或统计显著。','']
+        report+=['## HighDiv历史覆盖参考（未重新运行）','', '按用户最新指示直接使用 results/highdiv_time900 的已审计900秒覆盖。历史仅seed 0，外层-O0，12工作槽、实际九例同时运行；当前两模式为Release，按用户最新要求采用15任务槽、实际12路并发，并保留首组运行中变更记录。它不是本轮同条件或多种子配对，不能据此声称公平速度提升或统计显著。','']
         for h in historical['rows']:
             reference_rows.append({k:v for k,v in h.items() if k!='curve'})
             for r in runs:

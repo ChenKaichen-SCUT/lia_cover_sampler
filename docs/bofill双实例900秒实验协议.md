@@ -7,7 +7,7 @@
 - SMT_random_LIA_ex14600_2600_100.smt2：114fb8ac7228c36cc6124bd9f2d95fd16a3bf2d330c39e185e8145d56821de1f。
 - SMT_real_LIA_ex8500_2400_100.smt2：9ff3c643c1756057b1f127c5818bf38c468761ad3d2dd742cf34e3511e0690ec。
 
-固定先 random 后 real，各按 seed 0、1、2，组内两个配置同步释放、组间屏障。固定逻辑 CPU 0/2/4，并核验其物理核身份不同；第 g 组配置 i 使用 cores[(i+g)%3]。监督器使用 CPU 6，两个采样进程的 OMP/BLAS 线程数设为 1。每进程地址空间上限 6 GiB、单文件上限 1 GiB、禁用 core dump；两个配置相同。墙钟从同步释放开始，包含 exec、输入加载、编译、结构记录、初始化和所有生成及交付成本。900 秒发送 SIGTERM，额外 2 秒后 SIGKILL；清理不计入性能预算，晚到模型排除。轮询误差和实际信号时刻记录，不把结束时间强行写成 900。
+用户随后要求使用15线程并行：工作池上限15个单线程采样进程，实际任务共12个，全部并行；CPU 0–14作为共享CPU集合，监督器使用CPU 15。已启动的random/seed-0两个进程保留，在并发切换时扩展到相同CPU集合；其余十个任务同步释放。取消组间屏障，不新增填充任务。两个早启动进程经历了并发调整，调整时间、亲和性和实际起点写入parallel_amendment.json，不隐藏这一运行条件变化。所有采样进程的OMP/BLAS线程数设为1。并发安全保护为所有采样组总RSS超过20GiB或主机可用内存低于3GiB时终止最大内存组并保留现场；每进程地址空间上限 6 GiB、单文件上限 1 GiB、禁用 core dump；两个配置相同。墙钟从同步释放开始，包含 exec、输入加载、编译、结构记录、初始化和所有生成及交付成本。900 秒发送 SIGTERM，额外 2 秒后 SIGKILL；清理不计入性能预算，晚到模型排除。轮询误差和实际信号时刻记录，不把结束时间强行写成 900。
 
 HighDiv 不启动任何新运行。历史参考固定为 results/highdiv_time900 的 seed 0、900秒独立审计：SMT_random 为13504/104639（12.905322%），SMT_real为7639/66061（11.563555%）。原HighDiv外层-O0、12工作槽且实际九例并行，二进制 c3daea3dd7e50eedcbeca139f018f4ecf05d47c67aa606badf31fa89fed1859a。来源manifest、审计及输入哈希绑定在highdiv_historical_reference.json中。历史覆盖是描述性参考，不加入本轮三种子胜平负，不把同一个历史seed复制成三次独立重复。
 
@@ -26,3 +26,5 @@ HighDiv 不启动任何新运行。历史参考固定为 results/highdiv_time900
 复现：CMake Release 构建并运行回归（不用构建或运行HighDiv）；随后 `python3 scripts/run_bofill_900s.py --out results/bofill_900s --postprocess`。离线单独复核使用冻结环境执行 `scripts/audit_bofill_results.py results/bofill_900s --jobs 3` 和 `scripts/analyze_bofill_results.py results/bofill_900s`。运行计划绑定实际源文件、二进制、协议和输入哈希。原历史结果全部保持原样。
 
 完整原始 runs 目录以逐运行无损 tar.gz 归档，必要时按50MiB分块，以适应Git单文件限制；保留原目录，不删除日志。archive_manifest.json同时记录分块和每个解压文件的SHA256。克隆后首次审计可自动恢复缺少的运行目录，验证哈希；不覆盖已存在目录。资源监测只在监督器核上执行，每秒读取/proc，单独保留原始记录。
+
+本次实际续跑命令：`python3 scripts/continue_bofill_parallel.py results/bofill_900s`。它保留首组已运行进程，并取得后续目录所有权；旧串行监督器完成首组后遇到已存在的目录而结束，属于明确的调度器替换记录，不是采样器失败。最终以parallel_progress.json及新监督器汇总为准。原plan.json保留，parallel_amendment.json记录用户要求导致的变更，不伪造从一开始就15路。

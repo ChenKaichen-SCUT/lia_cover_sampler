@@ -26,7 +26,7 @@ def sample_resources(pid):
         except (FileNotFoundError,ProcessLookupError,PermissionError):pass
     return rows
 def gate(spec_path):
-    spec=json.loads(Path(spec_path).read_text());os.sched_setaffinity(0,{spec['core']})
+    spec=json.loads(Path(spec_path).read_text());os.sched_setaffinity(0,set(spec.get('cpus',[spec['core']])))
     resource.setrlimit(resource.RLIMIT_AS,(6*1024**3,6*1024**3))
     resource.setrlimit(resource.RLIMIT_FSIZE,(1024**3,1024**3))
     resource.setrlimit(resource.RLIMIT_CORE,(0,0))
