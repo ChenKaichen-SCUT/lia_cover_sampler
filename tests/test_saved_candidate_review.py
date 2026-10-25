@@ -163,4 +163,39 @@ class ManualTests(unittest.TestCase):
             self.assertEqual(metric.export(metric.apply(state,m)), metric.export(state))
             self.assertNotEqual(metric.export(empty), metric.export(state))
 
+
+class FrozenDecisionTests(unittest.TestCase):
+    def rows(self):
+        return [dict(round=11,instance=c,seed=s,capacity=k,prefix='final',
+                     mode='projection_fixed',contrast='all_minus_ordinary_retention',difference=1)
+                for c in ('a','b') for s in (0,1) for k in (4,8)]
+
+    def test_two_formulas_and_two_seeds_required(self):
+        from summarize_saved_candidate_review import gate
+        rows=self.rows()
+        self.assertTrue(gate(rows)['necessary_gate_passed'])
+        self.assertFalse(gate([r for r in rows if r['instance']=='a'])['necessary_gate_passed'])
+        self.assertFalse(gate([r for r in rows if r['seed']==0])['necessary_gate_passed'])
+
+    def test_round10_cannot_supply_missing_confirmation(self):
+        from summarize_saved_candidate_review import gate
+        rows=self.rows()
+        for r in rows:
+            if r['instance']=='b':r['round']=10
+        self.assertEqual(gate(rows)['decision'],'No-Go')
+
+    def test_incomplete_and_zero_not_positive(self):
+        from summarize_saved_candidate_review import gate
+        for value in (None,0,-1):
+            rows=self.rows()
+            for r in rows:
+                if r['instance']=='b' and r['seed']==1:r['difference']=value
+            self.assertEqual(gate(rows)['decision'],'No-Go')
+
+    def test_repeated_early_regression_fails(self):
+        from summarize_saved_candidate_review import gate
+        rows=self.rows()
+        rows += [dict(r,prefix='1',difference=-1) for r in rows]
+        self.assertEqual(gate(rows)['decision'],'No-Go')
+
 if __name__ == '__main__': unittest.main()

@@ -202,6 +202,9 @@ def prepare_inputs(out, temporary):
     for round_no in (10, 11):
         base = ROOT / f'results/round{round_no}_projection/main_10s'
         plan = json.loads((base / 'plan.json').read_text())
+        # Historical absolute paths describe the originating checkout, not the
+        # user's current checkout. Resolve their repository-relative suffix.
+        historical_root = Path(plan['tasks'][0]['formula']).parent.parent
         archive = json.loads((base / 'archive.json').read_text())
         done = json.loads((base / 'COMPLETE.json').read_text())
         runs = lines(base / 'runs.jsonl')
@@ -227,8 +230,8 @@ def prepare_inputs(out, temporary):
         # Check generating source at its own commit, not the latest working tree.
         for path, digest in plan['hashes'].items():
             p = Path(path)
-            if str(p).startswith(str(ROOT)) and '/build/' not in path:
-                relative = str(p.relative_to(ROOT))
+            if p.is_relative_to(historical_root) and '/build/' not in path:
+                relative = str(p.relative_to(historical_root))
                 require(sha(git_bytes(plan['commit'], relative)) == digest,
                         'historical source/input Git binding: ' + relative)
                 manifest['source_evidence'].append(dict(round=round_no, path=relative,
@@ -240,7 +243,7 @@ def prepare_inputs(out, temporary):
             rr = dict(r)
             for key in ('formula', 'prefix_values', 'seed_values'):
                 original = Path(r[key])
-                relative = original.relative_to(ROOT)
+                relative = original.relative_to(historical_root)
                 data = git_bytes(BASE, str(relative))
                 require(sha(data) == plan['hashes'][str(original)], 'snapshot input hash')
                 copied = out / 'inputs' / relative
@@ -604,16 +607,20 @@ def combine(out, audits):
     for round_no in (10, 11):
         dest = out / f'round{round_no}'
         for name in tables:
+            fields = []
+            for path in sorted((dest / 'sessions').glob('*/'+name+'.csv')):
+                with path.open() as src:
+                    fields += list(csv.DictReader(src).fieldnames or [])
+            fields = list(dict.fromkeys(fields))
             with (dest / (name + '.csv')).open('w') as f:
-                writer = None
+                writer = csv.DictWriter(f, fields, lineterminator='\n') if fields else None
+                if writer:
+                    writer.writeheader()
                 for path in sorted((dest / 'sessions').glob('*/'+name+'.csv')):
                     with path.open() as src:
                         reader = csv.DictReader(src)
                         if not reader.fieldnames:
                             continue
-                        if writer is None:
-                            writer = csv.DictWriter(f, reader.fieldnames, lineterminator='\n')
-                            writer.writeheader()
                         for row in reader:
                             writer.writerow(row)
         # Leave per-session AUDIT and model catalog; consolidated CSVs carry ids.
