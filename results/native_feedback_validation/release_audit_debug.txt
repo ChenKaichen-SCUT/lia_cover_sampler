@@ -1,0 +1,20 @@
+test_independent_feedback_audit (test_native_feedback.NativeFeedback) ... Fatal Python error: Segmentation fault
+
+Current thread 0x000075400971b000 (most recent call first):
+  File "/tmp/lia-highdiv-frozen/venv/lib/python3.10/site-packages/z3/z3core.py", line 3620 in Z3_parse_smtlib2_string
+  File "/tmp/lia-highdiv-frozen/venv/lib/python3.10/site-packages/z3/z3.py", line 9489 in parse_smt2_string
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_native_feedback_results.py", line 142 in one_run
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/tests/test_native_feedback.py", line 64 in test_independent_feedback_audit
+  File "/usr/lib/python3.10/unittest/case.py", line 549 in _callTestMethod
+  File "/usr/lib/python3.10/unittest/case.py", line 591 in run
+  File "/usr/lib/python3.10/unittest/case.py", line 650 in __call__
+  File "/usr/lib/python3.10/unittest/suite.py", line 122 in run
+  File "/usr/lib/python3.10/unittest/suite.py", line 84 in __call__
+  File "/usr/lib/python3.10/unittest/suite.py", line 122 in run
+  File "/usr/lib/python3.10/unittest/suite.py", line 84 in __call__
+  File "/usr/lib/python3.10/unittest/runner.py", line 184 in run
+  File "/usr/lib/python3.10/unittest/main.py", line 271 in runTests
+  File "/usr/lib/python3.10/unittest/main.py", line 101 in __init__
+  File "/usr/lib/python3.10/unittest/__main__.py", line 18 in <module>
+  File "/usr/lib/python3.10/runpy.py", line 86 in _run_code
+  File "/usr/lib/python3.10/runpy.py", line 196 in _run_module_as_main

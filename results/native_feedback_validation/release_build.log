@@ -1,0 +1,164 @@
+[  4%] Building CXX object CMakeFiles/preparation_probe_frozen.dir/src/preparation_probe.cpp.o
+[  4%] Building CXX object CMakeFiles/native_phase_hook_test.dir/tests/native_phase_hook_test.cpp.o
+[  4%] Building CXX object CMakeFiles/math_probe.dir/tests/math_probe.cpp.o
+[  4%] Building CXX object CMakeFiles/native_soft_phase_test.dir/tests/native_soft_phase_test.cpp.o
+[  5%] Building CXX object CMakeFiles/frozen_ab_core.dir/vendor/frozen_ab/src/core.cpp.o
+[  7%] Building CXX object CMakeFiles/lia_core.dir/src/core.cpp.o
+[  7%] Building CXX object CMakeFiles/frozen_ab_core.dir/vendor/frozen_ab/src/local.cpp.o
+[  8%] Linking CXX executable math_probe
+[  8%] Built target math_probe
+[  9%] Building CXX object CMakeFiles/frozen_ab_core.dir/vendor/frozen_ab/src/global.cpp.o
+[ 10%] Linking CXX executable native_phase_hook_test
+[ 10%] Built target native_phase_hook_test
+[ 11%] Building CXX object CMakeFiles/frozen_ab_core.dir/vendor/frozen_ab/src/control.cpp.o
+[ 12%] Linking CXX executable preparation_probe_frozen
+[ 13%] Building CXX object CMakeFiles/lia_core.dir/src/local.cpp.o
+[ 14%] Building CXX object CMakeFiles/lia_core.dir/src/global.cpp.o
+[ 14%] Built target preparation_probe_frozen
+[ 15%] Building CXX object CMakeFiles/lia_core.dir/src/control.cpp.o
+[ 16%] Building CXX object CMakeFiles/lia_core.dir/src/scheduler.cpp.o
+[ 17%] Building CXX object CMakeFiles/lia_core.dir/src/search.cpp.o
+[ 18%] Linking CXX static library libfrozen_ab_core.a
+[ 19%] Linking CXX executable native_soft_phase_test
+[ 19%] Built target frozen_ab_core
+[ 20%] Building CXX object CMakeFiles/lia_core.dir/src/line.cpp.o
+[ 20%] Built target native_soft_phase_test
+[ 21%] Building CXX object CMakeFiles/lia_core.dir/src/stream.cpp.o
+[ 22%] Building CXX object CMakeFiles/lia_core.dir/src/coverage_block_generator.cpp.o
+[ 23%] Building CXX object CMakeFiles/lia_core.dir/src/residual_coverage.cpp.o
+[ 24%] Building CXX object CMakeFiles/lia_core.dir/src/macro_choice.cpp.o
+[ 25%] Building CXX object CMakeFiles/lia_core.dir/src/plateau_tracker.cpp.o
+[ 26%] Building CXX object CMakeFiles/lia_core.dir/src/lia_choice_compiler.cpp.o
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp: In function ‘lia::CompileMode lia::parse_compile_mode(const string&)’:
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:284:5: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+  284 |     if(s=="plain")return CompileMode::Plain;if(s=="simplify_only")return CompileMode::SimplifyOnly;
+      |     ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:284:45: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+  284 |     if(s=="plain")return CompileMode::Plain;if(s=="simplify_only")return CompileMode::SimplifyOnly;
+      |                                             ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:285:5: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+  285 |     if(s=="eq_only")return CompileMode::EqOnly;if(s=="choice_only")return CompileMode::ChoiceOnly;
+      |     ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:285:48: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+  285 |     if(s=="eq_only")return CompileMode::EqOnly;if(s=="choice_only")return CompileMode::ChoiceOnly;
+      |                                                ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:286:5: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+  286 |     if(s=="full"||s=="choice_compiled")return CompileMode::Full;throw std::invalid_argument("unknown compilation mode");
+      |     ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:286:65: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+  286 |     if(s=="full"||s=="choice_compiled")return CompileMode::Full;throw std::invalid_argument("unknown compilation mode");
+      |                                                                 ^~~~~
+[ 27%] Linking CXX static library liblia_core.a
+[ 27%] Built target lia_core
+[ 34%] Building CXX object CMakeFiles/core_test.dir/tests/core_test.cpp.o
+[ 34%] Building CXX object CMakeFiles/lia_cover_sampler.dir/src/main.cpp.o
+[ 34%] Building CXX object CMakeFiles/search_test.dir/tests/search_test.cpp.o
+[ 34%] Building CXX object CMakeFiles/snapshot_probe.dir/src/snapshot_probe.cpp.o
+[ 34%] Building CXX object CMakeFiles/repair_test.dir/tests/repair_test.cpp.o
+[ 34%] Building CXX object CMakeFiles/line_test.dir/tests/line_test.cpp.o
+[ 34%] Building CXX object CMakeFiles/diagnostic_test.dir/tests/diagnostic_test.cpp.o
+[ 35%] Linking CXX executable repair_test
+[ 36%] Linking CXX executable snapshot_probe
+[ 36%] Built target repair_test
+[ 37%] Building CXX object CMakeFiles/output_refiner.dir/src/output_refiner.cpp.o
+[ 37%] Built target snapshot_probe
+[ 38%] Building CXX object CMakeFiles/preparation_probe.dir/src/preparation_probe.cpp.o
+[ 39%] Linking CXX executable line_test
+[ 40%] Linking CXX executable diagnostic_test
+[ 40%] Built target line_test
+[ 41%] Linking CXX executable search_test
+[ 42%] Building CXX object CMakeFiles/preparation_reuse_test.dir/tests/preparation_reuse_test.cpp.o
+[ 42%] Built target diagnostic_test
+[ 43%] Linking CXX executable core_test
+[ 44%] Building CXX object CMakeFiles/coverage_block_probe.dir/src/coverage_block_probe.cpp.o
+[ 44%] Built target search_test
+[ 45%] Building CXX object CMakeFiles/coverage_block_test.dir/tests/coverage_block_test.cpp.o
+[ 45%] Built target core_test
+[ 46%] Building CXX object CMakeFiles/residual_state_test.dir/tests/residual_state_test.cpp.o
+[ 47%] Linking CXX static library liboutput_refiner.a
+[ 47%] Built target output_refiner
+[ 50%] Building CXX object CMakeFiles/soft_phase_core.dir/src/soft_phase_bridge.cpp.o
+[ 50%] Linking CXX executable lia_cover_sampler
+[ 50%] Linking CXX executable preparation_probe
+[ 50%] Built target preparation_probe
+[ 51%] Building CXX object CMakeFiles/residual_online_probe.dir/src/residual_online_probe.cpp.o
+[ 52%] Linking CXX executable coverage_block_probe
+[ 52%] Built target lia_cover_sampler
+[ 53%] Building CXX object CMakeFiles/residual_cardinality_test.dir/tests/residual_cardinality_test.cpp.o
+[ 54%] Linking CXX executable residual_state_test
+[ 54%] Built target coverage_block_probe
+[ 55%] Building CXX object CMakeFiles/choice_catalog_probe.dir/src/choice_catalog_probe.cpp.o
+[ 56%] Linking CXX executable preparation_reuse_test
+[ 56%] Built target residual_state_test
+[ 57%] Building CXX object CMakeFiles/choice_catalog_test.dir/tests/choice_catalog_test.cpp.o
+[ 57%] Built target preparation_reuse_test
+[ 58%] Building CXX object CMakeFiles/macro_online_probe.dir/src/macro_online_probe.cpp.o
+[ 59%] Building CXX object CMakeFiles/soft_phase_core.dir/src/conditional_observation.cpp.o
+[ 60%] Linking CXX executable coverage_block_test
+[ 60%] Built target coverage_block_test
+[ 61%] Building CXX object CMakeFiles/macro_choice_test.dir/tests/macro_choice_test.cpp.o
+[ 62%] Linking CXX executable choice_catalog_probe
+[ 63%] Linking CXX executable residual_online_probe
+[ 63%] Built target choice_catalog_probe
+[ 64%] Building CXX object CMakeFiles/query_exit_test.dir/tests/query_exit_test.cpp.o
+[ 65%] Linking CXX executable choice_catalog_test
+[ 65%] Built target residual_online_probe
+[ 65%] Building CXX object CMakeFiles/macro_diagnostic_probe.dir/src/macro_diagnostic_probe.cpp.o
+[ 65%] Built target choice_catalog_test
+[ 66%] Building CXX object CMakeFiles/macro_retry_probe.dir/src/macro_retry_probe.cpp.o
+[ 67%] Linking CXX executable residual_cardinality_test
+[ 67%] Built target residual_cardinality_test
+[ 68%] Building CXX object CMakeFiles/macro_retry_test.dir/tests/macro_retry_test.cpp.o
+[ 69%] Linking CXX executable macro_online_probe
+[ 70%] Linking CXX executable macro_choice_test
+[ 71%] Linking CXX static library libsoft_phase_core.a
+[ 72%] Linking CXX executable query_exit_test
+[ 72%] Built target soft_phase_core
+[ 73%] Building CXX object CMakeFiles/lia_choice_compiler_test.dir/tests/lia_choice_compiler_test.cpp.o
+[ 74%] Linking CXX executable macro_diagnostic_probe
+[ 74%] Built target macro_online_probe
+[ 75%] Building CXX object CMakeFiles/bofill_sampler.dir/src/bofill_sampler.cpp.o
+[ 75%] Built target macro_choice_test
+[ 76%] Building CXX object CMakeFiles/bofill_first_sat_probe.dir/src/bofill_first_sat_probe.cpp.o
+[ 76%] Built target query_exit_test
+[ 77%] Building CXX object CMakeFiles/bofill_fallback_test.dir/tests/bofill_fallback_test.cpp.o
+[ 77%] Built target macro_diagnostic_probe
+[ 78%] Building CXX object CMakeFiles/soft_phase_sampler.dir/src/soft_phase_sampler.cpp.o
+[ 79%] Linking CXX executable macro_retry_probe
+[ 80%] Linking CXX executable macro_retry_test
+[ 80%] Built target macro_retry_probe
+[ 81%] Building CXX object CMakeFiles/soft_phase_test.dir/tests/soft_phase_test.cpp.o
+[ 81%] Built target macro_retry_test
+[ 82%] Building CXX object CMakeFiles/ab_sampler.dir/src/ab_adapter.cpp.o
+[ 83%] Linking CXX executable lia_choice_compiler_test
+[ 83%] Built target lia_choice_compiler_test
+[ 84%] Building CXX object CMakeFiles/ab_replay.dir/src/ab_replay.cpp.o
+[ 85%] Linking CXX executable bofill_fallback_test
+[ 86%] Linking CXX executable bofill_first_sat_probe
+[ 87%] Linking CXX executable bofill_sampler
+[ 87%] Built target bofill_fallback_test
+[ 88%] Building CXX object CMakeFiles/preservation_test.dir/tests/preservation_test.cpp.o
+[ 88%] Built target bofill_sampler
+[ 88%] Built target bofill_first_sat_probe
+[ 88%] Building CXX object CMakeFiles/ab_gate_test.dir/tests/ab_gate_test.cpp.o
+[ 89%] Building CXX object CMakeFiles/native_phase_feedback.dir/src/native_phase_feedback.cpp.o
+[ 90%] Linking CXX executable soft_phase_sampler
+[ 90%] Built target soft_phase_sampler
+[ 91%] Linking CXX executable soft_phase_test
+[ 91%] Built target soft_phase_test
+[ 92%] Linking CXX executable preservation_test
+[ 92%] Built target preservation_test
+[ 93%] Linking CXX executable ab_replay
+[ 94%] Linking CXX executable ab_gate_test
+[ 94%] Built target ab_replay
+[ 94%] Built target ab_gate_test
+[ 95%] Linking CXX static library libnative_phase_feedback.a
+[ 95%] Built target native_phase_feedback
+[ 97%] Building CXX object CMakeFiles/native_feedback_test.dir/tests/native_feedback_test.cpp.o
+[ 97%] Building CXX object CMakeFiles/native_feedback_sampler.dir/src/native_feedback_sampler.cpp.o
+[ 98%] Linking CXX executable ab_sampler
+[ 98%] Built target ab_sampler
+[ 99%] Linking CXX executable native_feedback_test
+[100%] Linking CXX executable native_feedback_sampler
+[100%] Built target native_feedback_test
+[100%] Built target native_feedback_sampler

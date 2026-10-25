@@ -1,0 +1,16 @@
+{
+  "upstream": "f2c6e1756b13281d96cbf90a8bd940129e56cce4",
+  "mode": "release",
+  "cache_source": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/dependencies/z3-soft-phase/build",
+  "cache_copy": "independent copy, never hardlink; make rebuilds all changed-header dependents",
+  "config": "PREFIX=/mnt/Space0/SMT_Sampling/lia_cover_sampler/dependencies/z3-native-feedback-phase/install\nCC=gcc\nCXX=g++\nCXXFLAGS= -D_MP_INTERNAL -DNDEBUG -D_EXTERNAL_RELEASE  -std=c++20 -fvisibility=hidden -fvisibility-inlines-hidden -c -mfpmath=sse -msse -msse2 -O3 -fPIC\nCFLAGS= -D_MP_INTERNAL -DNDEBUG -D_EXTERNAL_RELEASE   -fvisibility=hidden -fvisibility-inlines-hidden -c -mfpmath=sse -msse -msse2 -O3 -fPIC\nEXAMP_DEBUG_FLAG=\nCXX_OUT_FLAG=-o \nC_OUT_FLAG=-o \nOBJ_EXT=.o\nLIB_EXT=.a\nAR=ar\nAR_FLAGS=rcs\nAR_OUTFLAG=\nEXE_EXT=\nLINK=g++\nLINK_FLAGS=\nLINK_OUT_FLAG=-o \nLINK_EXTRA_FLAGS=-lpthread \nSO_EXT=.so\nSLINK=g++\nSLINK_FLAGS=-shared\nSLINK_EXTRA_FLAGS=-lpthread  -Wl,-soname,libz3.so\nSLINK_OUT_FLAG=-o \nOS_DEFINES=\n",
+  "library_sha256": "eb11f29555356fcda30d546c251bc1f77cb900336cea2e2abbb40484de9c2559",
+  "historical_library_sha256": {
+    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/dependencies/z3-soft-phase/install/lib/libz3.so": "70c45a4ef5945cdd5e3ab35de1a1895b73de3e3668161aa19b12a0180285661d",
+    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/dependencies/z3-soft-phase/install-sanitize/lib/libz3.so": "72941749033011820c43c72a4936f5adc32c633b95e41e9677d91338806a94af"
+  },
+  "patches": {
+    "z3_soft_phase.patch": "f22b68419792d917d103efbe0d08c313a0bebf5f4d1ef69dc2bfebfff925c7f8",
+    "z3_native_feedback_phase.patch": "3a834233b77a9fb701b2ed485e923d10d1737f5263001c5b3280a340f38d4fc6"
+  }
+}
