@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Six synchronized three-process groups; no evaluation/build during sampling."""
+"""Six synchronized two-process groups (HighDiv is historical only); no evaluation/build during sampling."""
 import argparse, hashlib, json, os, resource, signal, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-CONFIGS=['HighDiv_release','plain_clean','choice_compiled']
+CONFIGS=['plain_clean','choice_compiled']
 INPUTS=[('SMT_random_LIA_ex14600_2600_100.smt2','114fb8ac7228c36cc6124bd9f2d95fd16a3bf2d330c39e185e8145d56821de1f'),('SMT_real_LIA_ex8500_2400_100.smt2','9ff3c643c1756057b1f127c5818bf38c468761ad3d2dd742cf34e3511e0690ec')]
 def dump(p,obj):
     p=Path(p);p.write_text(json.dumps(obj,indent=2,ensure_ascii=False)+'\n')
@@ -49,7 +49,7 @@ def main():
     identities=[(Path(f'/sys/devices/system/cpu/cpu{c}/topology/physical_package_id').read_text().strip(),Path(f'/sys/devices/system/cpu/cpu{c}/topology/core_id').read_text().strip()) for c in cores]
     assert len(set(identities))==3
     if 6 in allowed:os.sched_setaffinity(0,{6})
-    binaries={'HighDiv_release':ROOT/'build/bofill/highdiv_release_source/HighDiv/highdiv','plain_clean':ROOT/'build/bofill/release/bofill_sampler','choice_compiled':ROOT/'build/bofill/release/bofill_sampler'}
+    binaries={'plain_clean':ROOT/'build/bofill/release/bofill_sampler','choice_compiled':ROOT/'build/bofill/release/bofill_sampler'}
     files={str(p.relative_to(ROOT)):sha(p) for p in [*binaries.values(),ROOT/'dependencies/bofill_highdiv_timing.patch',ROOT/'scripts/run_bofill_900s.py',ROOT/'scripts/audit_bofill_results.py',ROOT/'scripts/analyze_bofill_results.py',ROOT/'scripts/archive_bofill_results.py',ROOT/'CMakeLists.txt',ROOT/'docs/bofill等价编译设计与正确性.md',ROOT/'docs/bofill双实例900秒实验协议.md']}
     for directory in ['src','include']:
         for p in sorted((ROOT/directory).glob('*')):
@@ -59,7 +59,11 @@ def main():
     for name,expected in INPUTS:
         p=ROOT/'benchmarks'/name;assert sha(p)==expected
         dest=out/'inputs'/name;dest.write_bytes(p.read_bytes());inputs.append(dict(name=name,sha256=expected,path=str(dest)))
-    manifest=dict(schema=1,kind='formal_900s' if seconds==900 else 'correctness_smoke_only',seconds=seconds,seeds=[0,1,2] if seconds==900 else [0],configurations=CONFIGS,cores=cores,physical_cores=identities,inputs=inputs,files=files,git_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),git_status=subprocess.check_output(['git','status','--short','--untracked-files=no'],cwd=ROOT,text=True),z3_sha256=sha('/tmp/lia-highdiv-frozen/venv/lib/libz3.so'),created_utc=datetime.now(timezone.utc).isoformat(),limits=dict(address_space_gib=6,per_file_gib=1,cleanup_grace_seconds=2,highdiv_sample_cap=2147483647),environment=subprocess.check_output(['lscpu'],text=True),memory=Path('/proc/meminfo').read_text(),library_links=subprocess.check_output(['ldd',str(binaries['plain_clean'])],text=True))
+    manifest=dict(schema=1,kind='formal_900s' if seconds==900 else 'correctness_smoke_only',seconds=seconds,seeds=[0,1,2] if seconds==900 else [0],configurations=CONFIGS,cores=cores,physical_cores=identities,inputs=inputs,files=files,git_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),git_status=subprocess.check_output(['git','status','--short','--untracked-files=no'],cwd=ROOT,text=True),z3_sha256=sha('/tmp/lia-highdiv-frozen/venv/lib/libz3.so'),created_utc=datetime.now(timezone.utc).isoformat(),limits=dict(address_space_gib=6,per_file_gib=1,cleanup_grace_seconds=2,model_count_cap=None),environment=subprocess.check_output(['lscpu'],text=True),memory=Path('/proc/meminfo').read_text(),library_links=subprocess.check_output(['ldd',str(binaries['plain_clean'])],text=True))
+    historical=ROOT/'results/bofill_validation/highdiv_historical_reference.json'
+    (out/'historical_highdiv.json').write_bytes(historical.read_bytes())
+    manifest['historical_highdiv_sha256']=sha(historical)
+    manifest['highdiv_execution']='disabled_by_user; historical coverage reference only'
     dump(out/'plan.json',manifest)
     results=[];group=0
     try:
@@ -71,9 +75,7 @@ def main():
                 for i,config in enumerate(CONFIGS):
                     d=out/'runs'/f'{group:02d}_{config}';d.mkdir(parents=True)
                     raw=d/'raw'
-                    if config=='HighDiv_release':
-                        raw.mkdir();command=[str(binaries[config]),'-i',entry['path'],'-o',str(raw),'-n','2147483647','-t',str(seconds),'-s',str(seed)]
-                    else:command=[str(binaries[config]),entry['path'],'plain' if config=='plain_clean' else 'choice_compiled',str(seconds),str(seed),str(raw)]
+                    command=[str(binaries[config]),entry['path'],'plain' if config=='plain_clean' else 'choice_compiled',str(seconds),str(seed),str(raw)]
                     spec=dict(group=group,formula=entry['name'],seed=seed,configuration=config,core=cores[(i+group)%3],command=command,seconds=seconds)
                     dump(d/'spec.json',spec);log=(d/'process.log').open('wb')
                     p=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),'--gate',str(d/'spec.json')],stdin=subprocess.PIPE,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
