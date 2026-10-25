@@ -9,7 +9,8 @@ def main():
     mapping={'LIA_BINARY':'lia_cover_sampler','LIA_AB_BINARY':'ab_sampler','LIA_PREPARATION_PROBE':'preparation_probe','LIA_COVERAGE_BLOCK_PROBE':'coverage_block_probe','LIA_RESIDUAL_ONLINE_PROBE':'residual_online_probe','LIA_MACRO_ONLINE_PROBE':'macro_online_probe','LIA_MACRO_RETRY_PROBE':'macro_retry_probe','LIA_MACRO_DIAGNOSTIC_PROBE':'macro_diagnostic_probe','LIA_BOFILL_BINARY':'bofill_sampler','LIA_BOFILL_FIRST_SAT_PROBE':'bofill_first_sat_probe','LIA_SOFT_PHASE_BINARY':'soft_phase_sampler'}
     for key,value in mapping.items():env[key]=str(b/value)
     if v.sanitize:
-        env['ASAN_OPTIONS']='detect_leaks=1:halt_on_error=1:fast_unwind_on_malloc=0'
+        # Both project and dependency keep frame pointers in this build.
+        env['ASAN_OPTIONS']='detect_leaks=1:halt_on_error=1:fast_unwind_on_malloc=1'
         env['UBSAN_OPTIONS']='halt_on_error=1:print_stacktrace=1'
         env['LSAN_OPTIONS']='suppressions='+str(ROOT/'results/round3_dev/sanitize_diagnostic/lsan_external_z3.supp')
     with (out/'ctest.txt').open('w') as f:subprocess.run(['ctest','--test-dir',str(b),'--output-on-failure'],stdout=f,stderr=subprocess.STDOUT,env=env,check=True)

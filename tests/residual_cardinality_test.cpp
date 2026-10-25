@@ -16,8 +16,12 @@ int main(){try {
     {
         Formula f(file("(declare-const x Int)(declare-const y Int)(declare-const z Int)(assert (and (<= 0 x)(<= x 1)(<= 0 y)(<= y 1)(<= 0 z)(<= z 1)(<= (+ x y) 1)))"));
         std::vector<Target> ts{target(f,"x"),target(f,"y"),target(f,"z")};Stats stats;Budget b;b.seconds=10;
-        Global conjunction(f,0);check(conjunction.query(ts,b,stats).code==SolveStatus::Unsat,"fixed conjunction must fail");
-        Global g(f,0);auto r=g.query_at_least(ts,2,0,b,stats);
+        // This is a logical oracle, not a 50 ms performance requirement. The
+        // fully instrumented Z3 may reach that production slice before UNSAT.
+        Global conjunction(f,0);conjunction.target_budget.requested_timeout_ms=2000;
+        auto conjunction_result=conjunction.query(ts,b,stats);
+        check(conjunction_result.code==SolveStatus::Unsat,("fixed conjunction must fail; got "+conjunction_result.status+" / "+conjunction_result.detail).c_str());
+        Global g(f,0);g.target_budget.requested_timeout_ms=2000;auto r=g.query_at_least(ts,2,0,b,stats);
         check(r.model && f.validate(*r.model) && hits(f,*r.model,ts)==2,"choose compatible pair from conflicting window");
         check(r.model->size()==3,"auxiliary variables excluded from output");
         // Exhaustive finite-window oracle: every subset and every threshold.
@@ -84,7 +88,7 @@ int main(){try {
         check(s.commit(*c,.1,1),"first observation committed");
         check(ResidualTargetWindow::missing_opposite(s.state(),x),"first observation becomes future opposite-value target");
         // x=1 alone cannot satisfy the complete Reach condition here.
-        Global g(f,0);Budget budget;Stats stats;auto q=g.query_at_least({x},1,s.version(),budget,stats);
+        Global g(f,0);g.target_budget.requested_timeout_ms=2000;Budget budget;Stats stats;auto q=g.query_at_least({x},1,s.version(),budget,stats);
         check(q.code==SolveStatus::Unsat,"target includes original short-circuit Reach");
         bool bad=false;try{s.prepare({2,0},ResidualWindow{1},"bad",1);}catch(const std::invalid_argument&){bad=true;}check(bad,"Boolean typing enforced");
     }
@@ -97,7 +101,7 @@ int main(){try {
     }
     {
         const Z huge=-(pow2(90))+1;
-        Formula f(file("(declare-const x Int)(assert (= x "+huge.get_str()+"))"));Global g(f,0);Stats stats;Budget b;
+        Formula f(file("(declare-const x Int)(assert (= x "+huge.get_str()+"))"));Global g(f,0);g.target_budget.requested_timeout_ms=2000;Stats stats;Budget b;
         auto q=g.query_at_least({target(f,"x",0)},1,0,b,stats);
         check(q.model && (*q.model)[0]==huge && f.validate(*q.model),"negative large integer never truncated");
         auto valuefile=file(huge.get_str()+"\n");auto values=read_residual_values(f,valuefile);
