@@ -12,13 +12,14 @@ def status(stage,**kw):
 def run(cmd,log,env=None):
     with (ROOT/log).open('w') as f:subprocess.run(cmd,cwd=ROOT,env=env,stdout=f,stderr=subprocess.STDOUT,check=True)
 def main():
-    a=argparse.ArgumentParser();a.add_argument('--sanitizer-make-pid',type=int,required=True);v=a.parse_args()
+    a=argparse.ArgumentParser();a.add_argument('--sanitizer-make-pid',type=int,default=0);v=a.parse_args()
     p=Path('/proc')/str(v.sanitizer_make_pid);start=(p/'stat').read_text().split()[21] if p.exists() else None
     try:
         status('waiting_for_native_sanitizer_build',pid=v.sanitizer_make_pid)
         while True:
-            try:current=(p/'stat').read_text().split()[21]
+            try:fields=(p/'stat').read_text().split();current=fields[21]
             except FileNotFoundError:break
+            if fields[2]=='Z':break
             if current!=start:break
             time.sleep(5)
         status('finish_and_verify_native_sanitizer_build')
