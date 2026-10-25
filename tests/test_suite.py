@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from process_ready import wait_for_complete_line,cleanup_process
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "python"))
@@ -153,9 +154,11 @@ class IntegrationTests(unittest.TestCase):
         out = self.base / "interrupt"
         proc = subprocess.Popen([BIN, "-i", p, "-o", out, "-n", "1000000", "-t", "20"],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        time.sleep(.15)
+        self.addCleanup(cleanup_process,proc)
+        wait_for_complete_line(proc,out / "models.jsonl")
         proc.send_signal(signal.SIGTERM)
-        proc.communicate(timeout=5)
+        _,stderr=proc.communicate(timeout=10)
+        self.assertEqual(proc.returncode,130,stderr)
         for line in (out / "models.jsonl").read_text().splitlines():
             self.assertEqual(verify(original_formula(p), json.loads(line)["assignment"]), "valid")
         self.assertEqual(json.loads((out / "summary.json").read_text())["status"], "interrupted")

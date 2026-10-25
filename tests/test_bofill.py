@@ -1,5 +1,6 @@
 import json, os, signal, subprocess, sys, tempfile, time, unittest
 from pathlib import Path
+from process_ready import wait_for_complete_line,cleanup_process
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
 from audit_bofill_results import fingerprint, complete_lines, typed_highdiv, audit_run
 from reevaluate_round6_saved_candidates import FrozenCoverage, no_search, model_id
@@ -34,7 +35,9 @@ class Bofill(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             p=Path(t);text='(declare-const x Int)(assert (>= x 0))';(p/'f').write_text(text)
             q=subprocess.Popen([str(BIN),str(p/'f'),'plain','10','0',str(p/'out')],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-            time.sleep(.12);q.send_signal(signal.SIGTERM);stdout,stderr=q.communicate(timeout=5);self.assertEqual(q.returncode,0,stderr)
+            self.addCleanup(cleanup_process,q)
+            wait_for_complete_line(q,p/'out/commits.jsonl')
+            q.send_signal(signal.SIGTERM);stdout,stderr=q.communicate(timeout=10);self.assertEqual(q.returncode,0,stderr)
             self.assertEqual(self.audit(p/'out',text)['terminal'],'external_cancel')
     def test_highdiv_exact_parser_and_partial_line(self):
         i,m=typed_highdiv('0: x:-18446744073709551617;b:true;\n'.replace(': x',':x'),[('x','Int'),('b','Bool')]);self.assertEqual(i,0);self.assertEqual(m[1]['value'],'-18446744073709551617')

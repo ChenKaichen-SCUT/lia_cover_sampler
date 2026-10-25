@@ -25,14 +25,21 @@ class FirstSat(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp);(d/'f').write_text('(declare-const x Int)(assert (or (= x 0)(= x 2)))')
             env=dict(os.environ,BOFILL_START_MONO_NS=str(time.monotonic_ns()-10_050_000_000))
-            p=subprocess.run([str(sampler),str(d/'f'),'full_fallback','11','0',str(d/'out')],env=env,capture_output=True,text=True,timeout=4)
+            # Semantic fallback test: loader cost stays inside the artificial
+            # parent budget. The instrumented 2 GiB library must first load.
+            parent_seconds=20
+            p=subprocess.run([str(sampler),str(d/'f'),'full_fallback',str(parent_seconds),'0',str(d/'out')],env=env,capture_output=True,text=True,timeout=25)
             self.assertEqual(p.returncode,0,p.stderr);summary=json.loads((d/'out/summary.json').read_text());event=json.loads((d/'out/fallback.json').read_text())
             self.assertTrue(summary['fallback_occurred']);self.assertEqual(summary['formal_count'],2)
             self.assertEqual(summary['stats']['counts']['plain_fallback_outputs'],2);self.assertEqual(summary['stats']['counts'].get('compiled_outputs',0),0)
-            self.assertLess(event['remaining_before'],1);self.assertGreaterEqual(event['start'],10)
+            self.assertLess(event['remaining_before'],parent_seconds-10);self.assertGreaterEqual(event['start'],10)
+            self.assertAlmostEqual(event['start']+event['remaining_before'],parent_seconds,places=3)
             from test_bofill import Bofill
             Bofill.audit(self,d/'out',(d/'f').read_text())
-            for row in map(json.loads,(d/'out/commits.jsonl').read_text().splitlines()):self.assertTrue(row['timely']);self.assertLessEqual(row['completion'],11)
+            for row in map(json.loads,(d/'out/commits.jsonl').read_text().splitlines()):self.assertTrue(row['timely']);self.assertLessEqual(row['completion'],parent_seconds)
+            for query in map(json.loads,(d/'out/queries.jsonl').read_text().splitlines()):
+                evidence=query['evidence']
+                self.assertLessEqual(evidence['granted_timeout_ms'],1000*evidence['session_remaining_before_check']+1)
     def test_proved_unsat_separate_from_timeout(self):
         d=self.run_probe('(assert false)','full','continuous');self.assertEqual(json.loads((d/'summary.json').read_text())['terminal'],'UNSAT');self.assertFalse((d/'candidate.json').exists())
 if __name__=='__main__':unittest.main()
