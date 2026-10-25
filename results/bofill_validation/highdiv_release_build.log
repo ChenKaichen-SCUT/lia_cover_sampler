@@ -1,0 +1,46 @@
+make: Entering directory '/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/bofill/highdiv_release_source/HighDiv'
+g++ -I/tmp/lia-highdiv-frozen/venv/include -O3 -DNDEBUG -Wall -std=c++20 -MMD -MP -c src/sampler/liasampler.cpp -o build/sampler/liasampler.o
+g++ -I/tmp/lia-highdiv-frozen/venv/include -O3 -DNDEBUG -Wall -std=c++20 -MMD -MP -c src/main/main.cpp -o build/main/main.o
+g++ -I/tmp/lia-highdiv-frozen/venv/include -O3 -DNDEBUG -Wall -std=c++20 -MMD -MP -c src/sampler/sampler.cpp -o build/sampler/sampler.o
+In file included from src/sampler/sampler.cpp:1:
+src/sampler/sampler.h: In constructor ‘sampler::Sampler::Sampler(z3::context*, std::string, std::string, size_t, double)’:
+src/sampler/sampler.h:21:18: warning: ‘sampler::Sampler::c’ will be initialized after [-Wreorder]
+   21 |     z3::context& c;
+      |                  ^
+src/sampler/sampler.h:14:17: warning:   ‘std::string sampler::Sampler::smtFilePath’ [-Wreorder]
+   14 |     std::string smtFilePath;
+      |                 ^~~~~~~~~~~
+In file included from src/sampler/sampler.cpp:1:
+src/sampler/sampler.h:44:5: warning:   when initialized here [-Wreorder]
+   44 |     Sampler(z3::context* _c, std::string _smtFilePath, std::string _samplesFileDir, size_t _maxNumSamples, double _maxTimeLimit)
+      |     ^~~~~~~
+In file included from src/main/../sampler/liasampler.h:7,
+                 from src/main/main.cpp:1:
+src/main/../sampler/sampler.h: In constructor ‘sampler::Sampler::Sampler(z3::context*, std::string, std::string, size_t, double)’:
+src/main/../sampler/sampler.h:21:18: warning: ‘sampler::Sampler::c’ will be initialized after [-Wreorder]
+   21 |     z3::context& c;
+      |                  ^
+src/main/../sampler/sampler.h:14:17: warning:   ‘std::string sampler::Sampler::smtFilePath’ [-Wreorder]
+   14 |     std::string smtFilePath;
+      |                 ^~~~~~~~~~~
+In file included from src/main/../sampler/liasampler.h:7,
+                 from src/main/main.cpp:1:
+src/main/../sampler/sampler.h:44:5: warning:   when initialized here [-Wreorder]
+   44 |     Sampler(z3::context* _c, std::string _smtFilePath, std::string _samplesFileDir, size_t _maxNumSamples, double _maxTimeLimit)
+      |     ^~~~~~~
+In file included from src/sampler/liasampler.h:7,
+                 from src/sampler/liasampler.cpp:1:
+src/sampler/sampler.h: In constructor ‘sampler::Sampler::Sampler(z3::context*, std::string, std::string, size_t, double)’:
+src/sampler/sampler.h:21:18: warning: ‘sampler::Sampler::c’ will be initialized after [-Wreorder]
+   21 |     z3::context& c;
+      |                  ^
+src/sampler/sampler.h:14:17: warning:   ‘std::string sampler::Sampler::smtFilePath’ [-Wreorder]
+   14 |     std::string smtFilePath;
+      |                 ^~~~~~~~~~~
+In file included from src/sampler/liasampler.h:7,
+                 from src/sampler/liasampler.cpp:1:
+src/sampler/sampler.h:44:5: warning:   when initialized here [-Wreorder]
+   44 |     Sampler(z3::context* _c, std::string _smtFilePath, std::string _samplesFileDir, size_t _maxNumSamples, double _maxTimeLimit)
+      |     ^~~~~~~
+g++ build/main/main.o build/sampler/liasampler.o build/sampler/sampler.o -L/tmp/lia-highdiv-frozen/venv/lib -Wl,-rpath,/tmp/lia-highdiv-frozen/venv/lib -lz3 -o highdiv
+make: Leaving directory '/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/bofill/highdiv_release_source/HighDiv'

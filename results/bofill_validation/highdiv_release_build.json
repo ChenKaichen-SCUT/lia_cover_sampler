@@ -1,0 +1,16 @@
+{
+  "commit": "f2c6e1756b13281d96cbf90a8bd940129e56cce4",
+  "command": [
+    "make",
+    "-C",
+    "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/bofill/highdiv_release_source/HighDiv",
+    "-j4",
+    "Z3_PREFIX=/tmp/lia-highdiv-frozen/venv",
+    "CXXFLAGS=-O3 -DNDEBUG -Wall -std=c++20"
+  ],
+  "source_original_sha256": "8de539c2569e52ebd6b706190868886c1f954a280c3d6f487051dbb33399d08a",
+  "source_timed_sha256": "e22491abe29f7295e9bf327a90c8aac4a08ab26d7895712e011e2db7a8f317a4",
+  "binary_sha256": "3857f1a26f187aeb03e3bc539f2e0c61fe7551608c066eb8eb7900f7ef89010d",
+  "z3_sha256": "c66acd3c4743444ce90b255820a88a65cbeaa4bd13808ed59ac7be91721967ca",
+  "patch_scope": "only sample flush and post-write CLOCK_MONOTONIC timestamp; no sampling decision changed"
+}

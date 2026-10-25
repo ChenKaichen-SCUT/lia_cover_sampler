@@ -2,6 +2,18 @@
 
 投影生成器及当前构建/运行入口已移除；历史在线复现请在独立 worktree 检出 `833bca1` 或 `8937f66`。当前保留历史只读审计和第十二轮离线复核，参见 [依赖审计](docs/投影生成移除与依赖审计.md)。新的 bofill 实验使用普通持久枚举，不默认启用其他历史机制。
 
+当前 bofill 入口、双向恢复证明和冻结协议见 [等价编译设计](docs/bofill等价编译设计与正确性.md) 与 [双实例900秒协议](docs/bofill双实例900秒实验协议.md)。本轮实际重建 Release HighDiv，两个实例 × 三个 seed × 三配置，固定三物理核同步配对；历史结果不覆盖。
+
+```bash
+cmake -S . -B build/bofill/release -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DZ3_PREFIX=/tmp/lia-highdiv-frozen/venv
+cmake --build build/bofill/release -j12
+bash scripts/test_bofill_build.sh release
+python3 scripts/build_bofill_highdiv.py
+python3 scripts/run_bofill_900s.py --out results/bofill_900s --postprocess
+```
+
+单独运行：`build/bofill/release/bofill_sampler INPUT plain|choice_compiled SECONDS SEED NEW_OUTPUT_DIR`。不设1000个停止条件。正式统计必须经过独立原AST审计，具体环境及哈希记录在新归档。
+
 # lia_cover_sampler
 
 独立的 C++20 SMT(LIA) 覆盖采样器。局部模块通过安全区域、整数核方向与模区间命中生成候选；全局模块使用增量目标打包和带上下文的 UNSAT core 缓存。使用 GMP 任意精度整数和冻结 Z3 的标准 API，不修改求解器内核。

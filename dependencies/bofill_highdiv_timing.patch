@@ -1,0 +1,16 @@
+--- a/HighDiv/src/sampler/liasampler.cpp
++++ b/HighDiv/src/sampler/liasampler.cpp
+@@ -202,6 +202,13 @@
+             samplesFile << p.first << ":" << p.second << ";";
+         }
+         samplesFile << "\n";
++        samplesFile.flush();
++        const auto bofill_written_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++            std::chrono::steady_clock::now().time_since_epoch()).count();
++        static std::ofstream bofill_times(samplesFileDir + "/" +
++            extract_filename(smtFilePath) + ".times.csv");
++        bofill_times << num_samples << "," << bofill_written_ns << "," << samplesFile.good() << "\n";
++        bofill_times.flush();
+         num_samples++;
+ #ifdef VERBOSE
+         std::cout << "The " << num_samples << " sample is being generated ..." << std::endl;

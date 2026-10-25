@@ -131,3 +131,6 @@ add_test(NAME macro_retry COMMAND macro_retry_test)
 add_executable(lia_choice_compiler_test tests/lia_choice_compiler_test.cpp)
 target_link_libraries(lia_choice_compiler_test PRIVATE lia_core)
 add_test(NAME lia_choice_compiler COMMAND lia_choice_compiler_test)
+
+add_executable(bofill_sampler src/bofill_sampler.cpp)
+target_link_libraries(bofill_sampler PRIVATE lia_core)
