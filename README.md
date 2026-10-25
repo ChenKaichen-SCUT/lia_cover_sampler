@@ -11,6 +11,8 @@ bash scripts/test_bofill_build.sh release
 python3 scripts/run_bofill_900s.py --out results/bofill_900s --postprocess
 ```
 
+本轮 **12次900秒运行与独立审计已完成**，23569个及时不同合法模型全部通过。SMT_random编译版三seed均无模型；SMT_real终点均值仅提高0.0616个百分点，首模型与前100样本表现退步，整体未通过默认优化目标。见 [完整中文报告](docs/bofill双实例900秒实验报告.md) 和 [数据归档](results/bofill_900s)。HighDiv使用历史覆盖参考，未重新运行900秒。
+
 单独运行：`build/bofill/release/bofill_sampler INPUT plain|choice_compiled SECONDS SEED NEW_OUTPUT_DIR`。不设1000个停止条件。正式统计必须经过独立原AST审计，具体环境及哈希记录在新归档。
 
 # lia_cover_sampler

@@ -1,0 +1,9 @@
+group 0: SMT_random_LIA_ex14600_2600_100.smt2 seed=0 synchronized; budget=900.0s
+Traceback (most recent call last):
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/run_bofill_900s.py", line 131, in <module>
+    if __name__=='__main__':main()
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/run_bofill_900s.py", line 76, in main
+    d=out/'runs'/f'{group:02d}_{config}';d.mkdir(parents=True)
+  File "/usr/lib/python3.10/pathlib.py", line 1175, in mkdir
+    self._accessor.mkdir(self, mode)
+FileExistsError: [Errno 17] File exists: '/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/bofill_900s/runs/01_plain_clean'

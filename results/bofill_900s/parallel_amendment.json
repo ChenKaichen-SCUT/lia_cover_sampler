@@ -1,0 +1,54 @@
+{
+  "reason": "user explicitly requested 15-way parallelism; retain both already-running samplers",
+  "utc": "2026-10-25T02:47:15.511829+00:00",
+  "monotonic_ns": 1190117098130956,
+  "max_workers": 15,
+  "total_runs": 12,
+  "active_existing": 2,
+  "new_queued": 10,
+  "cpus": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+  ],
+  "supervisor_cpu": 15,
+  "old_controller": 93259,
+  "existing_affinity_change": [
+    {
+      "run": "00_choice_compiled",
+      "original_core": 2,
+      "affected_tids": [
+        93289,
+        93290,
+        93310
+      ]
+    },
+    {
+      "run": "00_plain_clean",
+      "original_core": 0,
+      "affected_tids": [
+        93288,
+        93291,
+        93292
+      ]
+    }
+  ],
+  "script_sha256": "f06eb29c50601d1a7fad3d54257c2337c06fc35888666176d5da2f1cf94df66e",
+  "gate_script_sha256": "74ea93ec73ee7a0ea7a1ce6b0544b9ad2d3c64abafa062a8168d9cd9046a2448",
+  "binary_sha256": "8b8ff605095938a4843b2965f6250afde863dfc8acf76cad15e05fa7a70039f3",
+  "memory_guard": "aggregate sampler RSS >20GiB or host MemAvailable <3GiB: terminate largest process group and record resource stop",
+  "all_seed0_first_pair_preserved": true,
+  "new_start_monotonic_ns": 1190117452375071
+}
