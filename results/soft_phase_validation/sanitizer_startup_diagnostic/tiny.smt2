@@ -1,0 +1,1 @@
+(declare-const x Int)(assert (or (= x 0)(= x 2)))

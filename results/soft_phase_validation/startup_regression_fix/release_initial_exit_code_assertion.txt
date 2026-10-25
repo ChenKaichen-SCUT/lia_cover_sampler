@@ -1,0 +1,16 @@
+test_external_cancel_retains_timely_models (test_bofill.Bofill) ... ok
+test_interrupt_preserves_whole_lines_and_limit (test_suite.IntegrationTests) ... FAIL
+test_first_model_fallback_uses_remaining_parent_time (test_bofill_diagnosis.FirstSat) ... ok
+
+======================================================================
+FAIL: test_interrupt_preserves_whole_lines_and_limit (test_suite.IntegrationTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/tests/test_suite.py", line 161, in test_interrupt_preserves_whole_lines_and_limit
+    self.assertEqual(proc.returncode,0,stderr)
+AssertionError: 130 != 0 : b''
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.331s
+
+FAILED (failures=1)
