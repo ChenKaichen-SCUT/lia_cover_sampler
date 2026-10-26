@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from diagnose_position_mechanism import (History,marginal,phase,future_windows,
-    matched_difference,distribution,structure,no_search,FrozenCoverage,model_id,object_hash,z3)
+    matched_difference,distribution,structure,no_search,FrozenCoverage,model_id,object_hash,z3,parse_atom)
 from audit_native_feedback_results import affine,value
 
 class PositionMechanism(unittest.TestCase):
@@ -45,6 +45,11 @@ class PositionMechanism(unittest.TestCase):
         x,y=z3.Ints('x y');_,terms=affine(x-x+3*y,{x.get_id():0,y.get_id():1});self.assertEqual(terms,{1:3})
     def test_phase_value_exact_unbounded_integer(self):
         x=z3.Int('x');self.assertFalse(value(z3.Not(x>2**100),{'x':2**100+1}))
+    def test_atom_parser_uses_frozen_private_context(self):
+        ctx=z3.Context();x=z3.Int('x',ctx=ctx)
+        with no_search():
+            e=parse_atom('(<= x 0)',{'x':x},ctx)
+            self.assertTrue(value(e,{'x':-1}));self.assertEqual(e.ctx,ctx)
     def test_local_equations_not_global_groups(self):
         with tempfile.TemporaryDirectory() as tmp:
             f=Path(tmp)/'case.smt2';f.write_text('(declare-const x Int)(declare-const y Int)(declare-const z Int)(assert (and (= x y) (or (= z x) (= z 5))))')

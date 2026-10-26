@@ -35,6 +35,13 @@ def phase(t):
 
 def zero_bucket(n):return '0' if n==0 else '1-4' if n<5 else '5+'
 
+def parse_atom(expression,decls,ctx):
+    # FrozenCoverage owns a private Z3 context; passing its declarations to the
+    # default parser context can segfault inside Z3 (even without a search).
+    parsed=z3.parse_smt2_string('(assert '+expression+')',decls=decls,ctx=ctx)
+    require(len(parsed)==1,'one atom assertion required')
+    return parsed[0]
+
 def state_stratum(r):return (r['phase'],r['covered_bin'],r['grant_ms'],r['prior_zero_bin'])
 
 def marginal(state,obs):
@@ -169,7 +176,7 @@ def run_one(args):
         metric=FrozenCoverage((out/'inputs'/job['formula']).read_text());decls={str(e.decl().name()):e for e in metric.decls};varids={e.get_id():i for i,e in enumerate(metric.decls) if e.is_int()};atoms={};parsed={}
         for a in atomrows:
             if not a['supported']:continue
-            expr=z3.parse_smt2_string('(assert '+a['expression']+')',decls=decls)[0];e=expr
+            expr=parse_atom(a['expression'],decls,metric.root.ctx);e=expr
             while z3.is_not(e):e=e.arg(0)
             left,right=affine(e.arg(0),varids),affine(e.arg(1),varids)
             indices=sorted(i for i in left[1].keys()|right[1].keys() if left[1].get(i,0)!=right[1].get(i,0))

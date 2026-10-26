@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/diagnose_position_mechanism.py", line 378, in <module>
+    if __name__=='__main__':main()
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/diagnose_position_mechanism.py", line 374, in main
+    result=future.result();completed+=1;dump(out/'progress.json',dict(status='diagnosis',completed=completed,total=28,workers=a.jobs));print(json.dumps(dict(run=result['run'],complete=completed,queries=result['queries'])),flush=True)
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 451, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+concurrent.futures.process.BrokenProcessPool: A process in the process pool was terminated abruptly while the future was running or pending.
