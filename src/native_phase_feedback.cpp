@@ -62,8 +62,8 @@ bool NativeAtom::truth(const Assignment&m) const {
     switch(relation){case Z3_OP_EQ:r=v==0;break;case Z3_OP_LE:r=v<=0;break;case Z3_OP_LT:r=v<0;break;case Z3_OP_GE:r=v>=0;break;case Z3_OP_GT:r=v>0;break;default:throw std::logic_error("unsupported relation");}
     return r!=negated;
 }
-NativePhaseFeedback::NativePhaseFeedback(Formula&f,z3::solver&s,Budget&b,const std::string&mode,unsigned seed):
-    f_(f),budget_(b),solver_(s),mode_(mode),rng_(uint64_t(seed)^0xd7846ba219ULL),quota_seconds(.05*b.seconds){
+NativePhaseFeedback::NativePhaseFeedback(Formula&f,z3::solver&s,Budget&b,const std::string&mode,unsigned seed,bool random_position):
+    f_(f),budget_(b),solver_(s),mode_(mode),rng_(uint64_t(seed)^0xd7846ba219ULL),position_rng_(uint64_t(seed)^0x8a5cd789635d2dffULL),random_position_(random_position),quota_seconds(.05*b.seconds){
     auto began=Clock::now();variable_related_.resize(f.variables.size());
     for(unsigned i=0;i<f.nodes.size();++i){original_[f.nodes[i].expr.id()]=i;
         if((i&63)==63&&(b.done()||seconds(began)>=quota_seconds)){stop_reason="feature_initialization_budget";mechanism_seconds+=seconds(began);return;}}
@@ -151,18 +151,33 @@ int NativePhaseFeedback::on_decision(Z3_ast atom,bool native,unsigned ordinal,un
         attempts.push_back({ordinal,conflicts,a?int(a->cache_index):-1,!a?stop_reason:!a->supported?a->reason:"outside_catalog"});
         auto elapsed=seconds(began);feature_seconds+=elapsed;charge(elapsed);return available()?0:3;
     }
+    if(random_position_){
+        auto reason=position_.visit(a->expression.id(),ordinal);
+        if(reason!="selected"){
+            attempts.push_back({ordinal,conflicts,int(a->cache_index),reason,position_.rank});
+            auto elapsed=seconds(began);feature_seconds+=elapsed;charge(elapsed);
+            // Existing callback ABI: 0 means keep the native phase and continue
+            // searching. Here it is an intentional positional skip, not an
+            // unsupported atom. 1=consume/Keep, 2=consume/Flip, 3=disable.
+            return available()?0:3;
+        }
+    }
     auto x=features(*a,native,ordinal,conflicts);for(double v:x)if(!std::isfinite(v)){stop_reason="nonfinite_feature";charge(seconds(began));attempts.push_back({ordinal,conflicts,int(a->cache_index),stop_reason});return 3;}
     double prep=seconds(began);feature_seconds+=prep;charge(prep);if(!available()){attempts.push_back({ordinal,conflicts,int(a->cache_index),stop_reason.empty()?"session_deadline":stop_reason});return 3;}
     auto t=Clock::now();auto choice=learner.choose(x,rng_,mode_=="native_feedback_one",budget_.seconds);
     auto pred=seconds(t);prediction_seconds+=pred;charge(pred);if(!available()){attempts.push_back({ordinal,conflicts,int(a->cache_index),stop_reason.empty()?"session_deadline":stop_reason});return 3;}
     decision.selected=true;decision.native_truth=native;decision.desired_truth=native!=(choice.action==PhaseAction::FlipOnce);
     decision.ordinal=ordinal;decision.conflicts=conflicts;decision.atom=a;decision.features=x;decision.choice=choice;decision.training_counts=learner.feedback_counts;
-    attempts.push_back({ordinal,conflicts,int(a->cache_index),"selected"});
+    decision.supported_rank=random_position_?position_.rank:1;
+    attempts.push_back({ordinal,conflicts,int(a->cache_index),"selected",decision.supported_rank});
     return choice.action==PhaseAction::FlipOnce?2:1;
 }
 void NativePhaseFeedback::prepare(const Coverage&c,const Assignment*m,unsigned version,unsigned query,unsigned grant,double recent_zero,double last_cost,bool last_timeout){
     clear();decision=NativeDecision{};decision.query=query;decision.coverage_version=version;attempts.clear();hook_log="{}";
+    position_eligible_=false;position_.reset(1);
     if(!version||!available())return;
+    position_eligible_=true;
+    if(random_position_)position_.reset(std::uniform_int_distribution<unsigned>(1,4)(position_rng_));
     coverage_=&c;last_model_=m;coverage_ratio_=f_.total_bits()?double(c.covered())/f_.total_bits():0;
     recent_zero_=recent_zero;last_cost_=last_cost;last_timeout_=last_timeout;granted_ms_=grant;
     if(version&&available()){Z3_solver_set_native_phase_callback(f_.ctx,solver_,callback,this,query);f_.ctx.check_error();installed_=true;}
@@ -193,7 +208,13 @@ std::string NativePhaseFeedback::decision_json() const {
     o<<'}';return o.str();
 }
 std::string NativePhaseFeedback::attempts_json() const {
-    std::ostringstream o;o<<'[';bool comma=false;for(auto&a:attempts){if(comma)o<<',';comma=true;o<<"{\"ordinal\":"<<a.ordinal<<",\"conflicts\":"<<a.conflicts<<",\"cache_index\":"<<a.cache_index<<",\"reason\":"<<quote(a.reason)<<'}';}return o.str()+']';
+    std::ostringstream o;o<<'[';bool comma=false;for(auto&a:attempts){if(comma)o<<',';comma=true;o<<"{\"ordinal\":"<<a.ordinal<<",\"conflicts\":"<<a.conflicts<<",\"cache_index\":"<<a.cache_index<<",\"reason\":"<<quote(a.reason)<<",\"supported_rank\":"<<a.supported_rank<<'}';}return o.str()+']';
+}
+std::string NativePhaseFeedback::position_json() const {
+    std::ostringstream o;o<<"{\"eligible\":"<<(position_eligible_?"true":"false")<<",\"policy\":"<<quote(random_position_?"random_supported_rank":"first")
+        <<",\"target\":"<<position_.target<<",\"distinct_supported\":"<<(random_position_?position_.rank:unsigned(decision.selected))
+        <<",\"reached\":"<<(decision.selected?"true":"false")<<",\"selected_rank\":"<<decision.supported_rank
+        <<",\"reason\":"<<quote(decision.selected?"selected":!position_eligible_?"disabled":!stop_reason.empty()?stop_reason:"target_not_reached")<<'}';return o.str();
 }
 std::string NativePhaseFeedback::new_atoms_jsonl(){
     std::ostringstream o;

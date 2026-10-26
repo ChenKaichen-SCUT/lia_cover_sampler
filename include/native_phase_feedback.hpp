@@ -52,14 +52,32 @@ struct NativeDecision {
     NativeFeatures features{};
     NativeChoice choice;
     std::array<unsigned,2> training_counts{};
+    unsigned supported_rank=0;
 };
-struct NativeAttempt {unsigned ordinal,conflicts;int cache_index;std::string reason;};
+struct NativeAttempt {unsigned ordinal,conflicts;int cache_index;std::string reason;unsigned supported_rank=0;};
+// Query-scoped, never reset by a solver backtrack/restart. Identity is the
+// cached, strongly referenced AST, not an occurrence of a decision literal.
+struct SupportedPosition {
+    unsigned target=1,rank=0;bool consumed=false;
+    std::unordered_set<unsigned> seen;
+    void reset(unsigned k){target=k;rank=0;consumed=false;seen.clear();}
+    std::string visit(unsigned id,unsigned ordinal){
+        if(consumed)return "opportunity_consumed";
+        if(ordinal>32)return "decision_window";
+        if(!seen.insert(id).second)return "duplicate_supported_atom";
+        ++rank;if(rank<target)return "position_before_target";
+        consumed=true;return "selected";
+    }
+};
 class NativePhaseFeedback {
     Formula& f_;
     Budget& budget_;
     z3::solver& solver_;
     std::string mode_;
     std::mt19937_64 rng_;
+    std::mt19937_64 position_rng_;
+    bool random_position_=false,position_eligible_=false;
+    SupportedPosition position_;
     std::unordered_map<unsigned,int> original_,variables_;
     std::unordered_set<unsigned> catalog_;
     std::vector<z3::expr> catalog_refs_;
@@ -86,7 +104,7 @@ public:
     double mechanism_seconds=0,feature_seconds=0,prediction_seconds=0,training_seconds=0;
     double last_check_seconds=0,last_capture_seconds=0,last_hook_seconds=0;
     double quota_seconds;
-    NativePhaseFeedback(Formula&,z3::solver&,Budget&,const std::string&,unsigned seed);
+    NativePhaseFeedback(Formula&,z3::solver&,Budget&,const std::string&,unsigned seed,bool random_position=false);
     ~NativePhaseFeedback();
     void set_catalog(const ConditionalObservations&);
     void prepare(const Coverage&,const Assignment*,unsigned version,unsigned query,unsigned granted,
@@ -99,6 +117,7 @@ public:
     double observe(const NativeDecision&,double reward,double cost);
     std::string decision_json() const;
     std::string attempts_json() const;
+    std::string position_json() const;
     std::string new_atoms_jsonl();
     NativeAtom* inspect(const z3::expr&e){return classify(e);}
     size_t cache_size() const{return cache_.size();}
