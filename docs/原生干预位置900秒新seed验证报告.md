@@ -232,7 +232,7 @@ sessions.csv还列首次正增益、生成侧高原、实际进程耗时与相�
 
 ```bash
 /tmp/lia-highdiv-frozen/venv/bin/python3 scripts/archive_bofill_results.py results/position_frozen_900s --restore
-HIGHDIV_ROOT=/tmp/lia-highdiv-frozen /tmp/lia-highdiv-frozen/venv/bin/python3 scripts/audit_position_frozen_900s.py results/position_frozen_900s --jobs 15
+HIGHDIV_ROOT=/tmp/lia-highdiv-frozen PYTHONPATH=scripts:python /tmp/lia-highdiv-frozen/venv/bin/python3 scripts/complete_position_frozen_900s.py results/position_frozen_900s --audit-only
 HIGHDIV_ROOT=/tmp/lia-highdiv-frozen /tmp/lia-highdiv-frozen/venv/bin/python3 scripts/analyze_position_frozen_900s.py results/position_frozen_900s
 python3 scripts/plot_position_frozen_900s.py results/position_frozen_900s
 ```
