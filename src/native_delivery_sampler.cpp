@@ -14,6 +14,14 @@ const char* jb(bool x){return x?"true":"false";}
 void flush(std::ofstream&s){s.flush();if(!s)throw std::runtime_error("journal write failed");}
 z3::expr block(Formula&f,const Assignment&a){z3::expr_vector terms(f.ctx);for(size_t i=0;i<a.size();++i)terms.push_back(f.nodes[f.variables[i]].expr!=f.value(i,a[i]));return z3::mk_or(terms);}
 template<class T>void numbers(std::ostream&o,const T&v){o<<'[';bool comma=false;for(auto x:v){if(comma)o<<',';comma=true;o<<x;}o<<']';}
+std::string query_statistics(z3::solver&s){
+    auto st=s.statistics();std::ostringstream o;o<<std::setprecision(17)<<'{';bool comma=false;
+    for(unsigned i=0;i<st.size();++i){auto k=st.key(i);
+        if(k!="conflicts"&&k!="decisions"&&k!="propagations"&&k!="restarts"&&k!="rlimit count"&&k!="num checks"&&k!="arith conflicts")continue;
+        if(comma)o<<',';comma=true;o<<quote(k)<<':';
+        if(st.is_uint(i))o<<st.uint_value(i);else if(st.is_double(i))o<<st.double_value(i);else o<<"null";
+    }return o.str()+'}';
+}
 }
 int main(int argc,char**argv){try{
     if(argc!=6)throw std::invalid_argument("native_delivery_sampler F CONFIG SECONDS SEED NEW_OUT");
@@ -21,7 +29,9 @@ int main(int argc,char**argv){try{
     if(auto p=std::getenv("BOFILL_START_MONO_NS"))budget.start=Clock::time_point(std::chrono::duration_cast<Clock::duration>(std::chrono::nanoseconds(std::stoll(p))));
     if(!std::isfinite(budget.seconds)||budget.seconds<=0)throw std::invalid_argument("seconds");
     std::string config=argv[2];bool position=config=="position_immediate"||config=="position_batch",batch=config=="first_batch"||config=="position_batch";
-    if(!position&&!batch&&config!="first_immediate")throw std::invalid_argument("configuration");
+    bool fixed4=config=="fixed4_immediate";
+    if(!position&&!batch&&!fixed4&&config!="first_immediate")throw std::invalid_argument("configuration");
+    auto position_policy=fixed4?NativePositionPolicy::FixedFourth:position?NativePositionPolicy::UniformOneToFour:NativePositionPolicy::FixedFirst;
     unsigned seed=std::stoul(argv[4]),max_queries=UINT_MAX;
     if(auto p=std::getenv("NATIVE_TEST_MAX_QUERIES"))max_queries=std::stoul(p);
     constexpr double delivery_reserve=.100,query_reserve=.025;
@@ -30,8 +40,8 @@ int main(int argc,char**argv){try{
     std::filesystem::path dir(argv[5]);if(!std::filesystem::create_directory(dir))throw std::runtime_error("new directory required");
     std::ofstream candidates(dir/"candidates.jsonl"),generation_commits(dir/"generation_commits.jsonl"),generation_receipts(dir/"generation_receipts.jsonl"),
         deliveries(dir/"deliveries.jsonl"),delivery_commits(dir/"delivery_commits.jsonl"),delivery_receipts(dir/"delivery_receipts.jsonl"),
-        queries(dir/"queries.jsonl"),positions(dir/"positions.jsonl"),batches(dir/"batches.jsonl"),atoms(dir/"atoms.jsonl"),blocks(dir/"blocks.jsonl"),costs(dir/"costs.jsonl");
-    for(auto p:{&candidates,&generation_commits,&generation_receipts,&deliveries,&delivery_commits,&delivery_receipts,&queries,&positions,&batches,&atoms,&blocks,&costs})*p<<std::setprecision(17);
+        queries(dir/"queries.jsonl"),positions(dir/"positions.jsonl"),batches(dir/"batches.jsonl"),atoms(dir/"atoms.jsonl"),blocks(dir/"blocks.jsonl"),costs(dir/"costs.jsonl"),diagnostics(dir/"diagnostics.jsonl");
+    for(auto p:{&candidates,&generation_commits,&generation_receipts,&deliveries,&delivery_commits,&delivery_receipts,&queries,&positions,&batches,&atoms,&blocks,&costs,&diagnostics})*p<<std::setprecision(17);
     Stats stats;double t=budget.elapsed();Formula f(argv[1]);if(!f.metric_compatible)throw std::runtime_error("metric unsupported");stats.times["load"]=budget.elapsed()-t;
     t=budget.elapsed();z3::solver solver(f.ctx,z3::solver::simple{});solver.add(f.root);solver.set("random_seed",seed);stats.times["solver_initialization"]=budget.elapsed()-t;
     GenerationState generation(f);DeliveryState delivery(f);SolveBudgetState control;control.fixed_levels=true;
@@ -75,12 +85,17 @@ int main(int argc,char**argv){try{
     {std::ofstream o(dir/"initial.json");o<<std::setprecision(17)<<"{\"mode\":"<<quote(config)<<",\"seed\":"<<seed<<",\"seconds\":"<<budget.seconds
         <<",\"source_sha256\":"<<quote(LIA_SOURCE_SHA)<<",\"z3_version\":"<<quote(Z3_get_full_version())<<",\"total_bits\":"<<f.total_bits()
         <<",\"batch_capacity\":32,\"wait_trigger\":0.5,\"batch_maintenance_cap\":0.020,\"delivery_management_quota_fraction\":0.05,\"delivery_reserve\":0.100,\"query_reserve\":0.025"
-        <<",\"position_range\":[1,2,3,4],\"decision_window\":32,\"selected_limit\":1,\"flip_probability\":0.5,\"learning\":false,\"test_query_limit\":"<<max_queries<<"}\n";flush(o);}
+        <<",\"position_range\":[1,2,3,4],\"decision_window\":32,\"selected_limit\":1,\"flip_probability\":0.5,\"learning\":false,\"test_query_limit\":"<<max_queries
+        <<",\"position_policy\":"<<quote(position_policy_name(position_policy))<<",\"action_sampling\":\"after_target_and_prechoice_budget_checks\",\"mechanism_quota_fraction\":0.05"
+        <<",\"formula_nodes\":"<<f.nodes.size()<<",\"original_variables\":"<<f.variables.size()<<",\"solver_kind\":\"simple_incremental\",\"solver_random_seed\":"<<seed
+        <<",\"action_rng_seed\":"<<quote(std::to_string(uint64_t(seed)^0xd7846ba219ULL))<<",\"position_rng_seed\":"<<quote(std::to_string(uint64_t(seed)^0x8a5cd789635d2dffULL))
+        <<",\"formula_load_seconds\":"<<stats.times["load"]<<",\"solver_initialization_seconds\":"<<stats.times["solver_initialization"]<<",\"initialization_record_seconds\":"<<budget.elapsed()<<"}\n";flush(o);}
     while(!budget.done()&&query<max_queries){
         refresh(generation_left()<=query_reserve);if(manager.failed()||generation_left()<=query_reserve)break;
         double cycle_start=budget.elapsed(),preparation_start=cycle_start;double delivery_before=all_delivery_cost;
+        double mechanism_before=policy?policy->mechanism_seconds:0;
         if(generation.version&&!policy){
-            t=budget.elapsed();policy=std::make_unique<NativePhaseFeedback>(f,solver,budget,"native_random_one",seed,position);stats.times["feature_initialization"]+=budget.elapsed()-t;
+            t=budget.elapsed();policy=std::make_unique<NativePhaseFeedback>(f,solver,budget,"native_random_one",seed,position_policy);stats.times["feature_initialization"]+=budget.elapsed()-t;
             if(policy->available()){
                 t=budget.elapsed();Budget preparation;preparation.parent=&budget;preparation.seconds=std::min(1.,std::max(0.,policy->quota_seconds-policy->mechanism_seconds));
                 summaries=std::make_unique<ConditionalObservations>(f,preparation);std::ofstream o(dir/"summaries.json");o<<summaries->json()<<'\n';flush(o);
@@ -102,6 +117,8 @@ int main(int argc,char**argv){try{
         r.check_seconds=policy?policy->last_check_seconds:budget.elapsed()-t;
         r.raw_status=answer==z3::sat?"sat":answer==z3::unsat?"unsat":"unknown";r.detail=answer==z3::unknown?solver.reason_unknown():"";
         r.exit_evidence={r.detail,grant.granted_ms,r.check_seconds,bool(interrupted),budget.left()<=0,false,false};r.exit_decision=interpret_query_exit(r.raw_status,r.exit_evidence);r.code=r.exit_decision.code;
+        t=budget.elapsed();auto solver_statistics=query_statistics(solver);double statistics_seconds=budget.elapsed()-t;
+        stats.times["query_statistics_capture"]+=statistics_seconds;if(policy)policy->charge(statistics_seconds);
         unsigned version=generation.version;bool valid=false,duplicate=false,generated=false;Gain gain;unsigned candidate_index=0;double ready=-1,scoring=0,journaling=0,blocking=0;
         if(answer==z3::sat){
             ++stats.counts["sat"];if(first_sat<0)first_sat=budget.elapsed();t=budget.elapsed();auto a=f.complete(solver.get_model());r.completion_seconds=budget.elapsed()-t;
@@ -133,13 +150,19 @@ int main(int argc,char**argv){try{
         t=budget.elapsed();std::string decision=policy?policy->decision_json():"{\"selected\":false,\"reason\":\"before_first\"}";
         if(policy){atoms<<policy->new_atoms_jsonl();flush(atoms);policy->charge(budget.elapsed()-t);}
         positions<<"{\"query\":"<<query<<",\"generation_version\":"<<version<<",\"position\":"<<(policy?policy->position_json():"{\"eligible\":false,\"target\":0,\"reached\":false,\"reason\":\"before_first\"}")
-            <<",\"decision\":"<<decision<<",\"attempts\":"<<(policy?policy->attempts_json():"[]")<<",\"hook\":"<<(policy?policy->hook_log:"{}")<<"}\n";flush(positions);
+            <<",\"decision\":"<<decision<<",\"attempts\":"<<(policy?policy->attempts_json():"[]")<<",\"hook\":"<<(policy?policy->hook_log:"{}")
+            <<",\"mechanism\":"<<(policy?policy->mechanism_json():"null")<<"}\n";flush(positions);
         t=budget.elapsed();queries<<"{\"query\":"<<query<<",\"start\":"<<began<<",\"check_call_start\":"<<check_call_start<<",\"check_call_finish\":"<<check_call_finish<<",\"finished\":"<<budget.elapsed()<<",\"generation_version_before\":"<<version<<",\"generation_version\":"<<generation.version
             <<",\"delivery_version\":"<<delivery.version<<",\"candidate_generation_index\":"<<candidate_index<<",\"candidate_ready_time\":"<<ready<<",\"evidence\":"<<r.evidence_json()
             <<",\"valid\":"<<jb(valid)<<",\"duplicate\":"<<jb(duplicate)<<",\"generated\":"<<jb(generated)<<",\"decision\":"<<decision<<",\"hook\":"<<(policy?policy->hook_log:"{}")
             <<",\"generation_gain\":"<<(generated?gain.covered:0)<<",\"generation_observations\":"<<(generated?gain.observed:0)<<",\"generation_scoring_seconds\":"<<scoring
             <<",\"blocking_seconds\":"<<blocking<<",\"preparation_seconds\":"<<began-preparation_start<<",\"mechanism_seconds\":"<<(policy?policy->mechanism_seconds:0)<<"}\n";flush(queries);
         if(policy)policy->charge(budget.elapsed()-t);
+        t=budget.elapsed();diagnostics<<"{\"query\":"<<query<<",\"cycle_start\":"<<cycle_start<<",\"generation_version_before\":"<<version
+            <<",\"mechanism_before_seconds\":"<<mechanism_before<<",\"mechanism\":"<<(policy?policy->mechanism_json():"null")
+            <<",\"solver_statistics_raw\":"<<solver_statistics<<",\"statistics_capture_seconds\":"<<statistics_seconds
+            <<",\"statistics_semantics\":\"raw_snapshot_after_check; do_not_assume_per_query_delta\",\"record_seconds\":"<<budget.elapsed()<<"}\n";flush(diagnostics);
+        double diagnostic_log_seconds=budget.elapsed()-t;stats.times["diagnostic_journal"]+=diagnostic_log_seconds;if(policy)policy->charge(diagnostic_log_seconds);
         last_cost=budget.elapsed()-cycle_start-(all_delivery_cost-delivery_before);last_timeout=r.code==SolveStatus::Timeout;recent_zero.push_back(!generated||gain.observed==0);if(recent_zero.size()>16)recent_zero.pop_front();
         costs<<"{\"query\":"<<query<<",\"cycle_start\":"<<cycle_start<<",\"cycle_end\":"<<budget.elapsed()<<",\"generation_cost\":"<<last_cost<<",\"delivery_cost\":"<<all_delivery_cost-delivery_before<<"}\n";flush(costs);
         ++query;
@@ -157,6 +180,6 @@ int main(int argc,char**argv){try{
         <<",\"generated_count\":"<<generation.version<<",\"formal_count\":"<<delivery.version<<",\"undelivered_count\":"<<manager.pending().size()
         <<",\"generation_marginal_sum\":"<<generation.marginal_sum<<",\"delivery_marginal_sum\":"<<delivery.marginal_sum<<",\"generation_observation_sum\":"<<generation.observation_sum<<",\"delivery_observation_sum\":"<<delivery.observation_sum
         <<",\"delivery_management_seconds\":"<<manager.maintenance_seconds<<",\"fifo_batches\":"<<manager.fifo_batches<<",\"quota_fallbacks\":"<<manager.quota_fallbacks<<",\"quota_stop_at\":"<<manager.quota_stop_at<<",\"quota_stop_cost\":"<<manager.quota_stop_cost
-        <<",\"mechanism_seconds\":"<<(policy?policy->mechanism_seconds:0)<<",\"mechanism_stop\":"<<quote(policy?policy->stop_reason:"")<<",\"training_seconds\":0,\"stats\":"<<stats.json()
+        <<",\"mechanism_seconds\":"<<(policy?policy->mechanism_seconds:0)<<",\"mechanism_stop\":"<<quote(policy?policy->stop_reason:"")<<",\"mechanism_diagnostics\":"<<(policy?policy->mechanism_json():"null")<<",\"training_seconds\":0,\"stats\":"<<stats.json()
         <<",\"generation_coverage\":"<<generation.coverage.json()<<",\"coverage\":"<<delivery.coverage.json()<<"}\n";flush(o);return 0;
 }catch(const std::exception&e){std::cerr<<"native_delivery_sampler: "<<e.what()<<'\n';return 1;}}

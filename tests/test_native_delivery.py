@@ -2,9 +2,9 @@
 import json,os,subprocess,tempfile,time,unittest,shutil,gzip,itertools
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-BIN=Path(os.environ.get('LIA_NATIVE_DELIVERY_BINARY',ROOT/'build/native_delivery/release/native_delivery_sampler'))
+BIN=Path(os.environ.get('LIA_NATIVE_DELIVERY_BINARY',ROOT/'build/position_fixed4/release/native_delivery_sampler'))
 OLD=ROOT/'build/native_feedback/release/native_feedback_sampler'
-MODES=('first_immediate','first_batch','position_immediate','position_batch')
+MODES=('first_immediate','first_batch','position_immediate','position_batch','fixed4_immediate')
 TEXT=''.join(f'(declare-const x{i} Int)' for i in range(6))+'(assert (and '+''.join(f'(or (= x{i} 0)(= x{i} 7))' for i in range(6))+'))'
 @unittest.skipUnless(BIN.exists(),'native delivery build not configured')
 class NativeDelivery(unittest.TestCase):
@@ -38,6 +38,11 @@ class NativeDelivery(unittest.TestCase):
             d=self.run_mode(TEXT,mode,limit=70);out=d/'experiment';run=out/'runs'/'case';run.mkdir(parents=True);(out/'inputs').mkdir();f=d/'input.smt2';shutil.copyfile(f,out/'inputs'/f.name);shutil.move(d/'raw',run/'raw')
             dump(out/'plan.json',dict(inputs=[dict(name=f.name,sha256=file_hash(f))]));dump(run/'spec.json',dict(configuration=mode,formula=f.name,seed=0,group=0,seconds=20))
             r=one_run((str(out),'case'));self.assertEqual(r['generated'],64);self.assertEqual(r['delivered'],64);self.assertEqual(r['tail'],0)
+            if mode in ['first_immediate','position_immediate','fixed4_immediate']:
+                from audit_position_fixed4 import diagnostics
+                rows,initial,cost=diagnostics(out,'case',allow_test_limit=True)
+                self.assertEqual(len(rows),65);self.assertEqual(initial['prefirst_selected'],0)
+                self.assertGreater(cost['queries'],cost['selected']);self.assertGreater(cost['mechanism_seconds'],0)
     def test_expired_no_search_or_output(self):
         for mode in MODES:
             d=self.run_mode('(assert true)',mode,seconds=.05,expired=True)
@@ -55,6 +60,41 @@ class NativeDelivery(unittest.TestCase):
         self.assertTrue(any(p['position']['target']>1 for p in reached))
         self.assertTrue(all(p['hook'].get('selected',0)<=1 and p['hook'].get('flips',0)<=1 for p in ps))
         self.assertTrue(all(p['position']['selected_rank']==p['position']['target'] for p in reached))
+    def test_fixed_fourth_actual_callback_and_no_redraw(self):
+        d=self.run_mode(TEXT,'fixed4_immediate',limit=70)
+        ps=self.rows(d,'positions.jsonl');selected=[p for p in ps if p['decision']['selected']]
+        self.assertTrue(selected)
+        count=0
+        for p in ps:
+            pos=p['position'];m=p['mechanism']
+            if not m:continue
+            self.assertEqual(pos['policy'],'fixed_fourth')
+            if pos['eligible']:self.assertEqual(pos['target'],4)
+            seen=set()
+            for a in p['attempts']:
+                if a['reason'] not in ['selected','position_before_target','duplicate_supported_atom']:continue
+                seen.add(a['cache_index']);self.assertEqual(a['supported_rank'],len(seen))
+                if a['reason']=='selected':self.assertEqual(len(seen),4)
+            if p['decision']['selected']:
+                self.assertEqual(pos['selected_rank'],4);self.assertTrue(pos['target_arrived'])
+            count+=m['action_drawn'];self.assertEqual(m['action_draw_count'],count)
+        self.assertTrue(any(p['position']['eligible'] and not p['decision']['selected'] for p in ps))
+        self.assertEqual(json.loads((d/'raw/initial.json').read_text())['position_policy'],'fixed_fourth')
+    def test_fixed_fourth_unreached_does_not_consume_action(self):
+        d=self.run_mode('(declare-const x Int)(assert (or (= x 0)(= x 1)))','fixed4_immediate')
+        for p in self.rows(d,'positions.jsonl'):
+            self.assertFalse(p['decision']['selected'])
+            if p['mechanism']:
+                self.assertFalse(p['mechanism']['action_drawn']);self.assertEqual(p['mechanism']['action_draw_count'],0)
+        self.assertEqual(len(self.rows(d,'deliveries.jsonl')),2)
+    def test_old_position_paths_match_frozen_binary(self):
+        old=ROOT/'build/native_delivery/release/native_delivery_sampler'
+        self.assertNotEqual(BIN,old,'set LIA_NATIVE_DELIVERY_BINARY to the new build')
+        for mode in ['first_immediate','position_immediate']:
+            a=self.run_mode(TEXT,mode,seed=11,limit=35,binary=old);b=self.run_mode(TEXT,mode,seed=11,limit=35)
+            self.assertEqual([r['model'] for r in self.rows(a,'candidates.jsonl')],[r['model'] for r in self.rows(b,'candidates.jsonl')])
+            def actions(d):return [(p['position']['target'],p['decision'].get('action_draw'),p['decision'].get('ordinal'),p['decision'].get('cache_index')) for p in self.rows(d,'positions.jsonl')]
+            self.assertEqual(actions(a),actions(b))
     def test_read_only_historical_fragment_and_fifo_reference(self):
         from reevaluate_round6_saved_candidates import FrozenCoverage,no_search
         source=ROOT/'results/highdiv_complementarity_gap/observations/00_native_random_one/models.jsonl.gz'

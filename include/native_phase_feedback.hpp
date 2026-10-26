@@ -9,6 +9,10 @@ namespace lia {
 constexpr unsigned native_feature_count=16;
 using NativeFeatures=std::array<double,native_feature_count>;
 enum class PhaseAction {KeepNative=0,FlipOnce=1};
+enum class NativePositionPolicy {FixedFirst,UniformOneToFour,FixedFourth};
+inline const char* position_policy_name(NativePositionPolicy p){
+    return p==NativePositionPolicy::FixedFirst?"first":p==NativePositionPolicy::FixedFourth?"fixed_fourth":"random_supported_rank";
+}
 struct NativePrediction {std::array<double,2> gain{},cost{},utility{};bool finite=true;};
 struct NativeChoice {
     PhaseAction action=PhaseAction::KeepNative;
@@ -76,7 +80,11 @@ class NativePhaseFeedback {
     std::string mode_;
     std::mt19937_64 rng_;
     std::mt19937_64 position_rng_;
-    bool random_position_=false,position_eligible_=false;
+    NativePositionPolicy position_policy_=NativePositionPolicy::FixedFirst;
+    bool position_eligible_=false,action_drawn_=false,target_arrived_=false;
+    double action_draw_=-1;
+    unsigned action_draw_count_=0;
+    unsigned active_query_=UINT_MAX;
     SupportedPosition position_;
     std::unordered_map<unsigned,int> original_,variables_;
     std::unordered_set<unsigned> catalog_;
@@ -95,6 +103,7 @@ class NativePhaseFeedback {
     NativeFeatures features(NativeAtom&,bool,unsigned,unsigned) const;
     int on_decision(Z3_ast,bool,unsigned,unsigned);
     static int callback(void*,Z3_ast,bool,unsigned,unsigned) noexcept;
+    void note_stop();
 public:
     static constexpr unsigned cache_cap=4096,atom_operation_cap=512,depth_cap=64,variable_cap=128,related_cap=128;
     NativeRidge learner;
@@ -104,7 +113,12 @@ public:
     double mechanism_seconds=0,feature_seconds=0,prediction_seconds=0,training_seconds=0;
     double last_check_seconds=0,last_capture_seconds=0,last_hook_seconds=0;
     double quota_seconds;
-    NativePhaseFeedback(Formula&,z3::solver&,Budget&,const std::string&,unsigned seed,bool random_position=false);
+    double stop_at_seconds=-1,stop_cost_seconds=0;
+    unsigned stop_query=UINT_MAX;
+    NativePhaseFeedback(Formula&,z3::solver&,Budget&,const std::string&,unsigned seed,NativePositionPolicy position=NativePositionPolicy::FixedFirst);
+    // Preserve the older callers' boolean API and their exact position path.
+    NativePhaseFeedback(Formula&f,z3::solver&s,Budget&b,const std::string&m,unsigned seed,bool random_position)
+        :NativePhaseFeedback(f,s,b,m,seed,random_position?NativePositionPolicy::UniformOneToFour:NativePositionPolicy::FixedFirst){}
     ~NativePhaseFeedback();
     void set_catalog(const ConditionalObservations&);
     void prepare(const Coverage&,const Assignment*,unsigned version,unsigned query,unsigned granted,
@@ -118,6 +132,7 @@ public:
     std::string decision_json() const;
     std::string attempts_json() const;
     std::string position_json() const;
+    std::string mechanism_json() const;
     std::string new_atoms_jsonl();
     NativeAtom* inspect(const z3::expr&e){return classify(e);}
     size_t cache_size() const{return cache_.size();}

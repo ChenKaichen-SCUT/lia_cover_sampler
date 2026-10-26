@@ -1,0 +1,212 @@
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /mnt/Space0/SMT_Sampling/lia_cover_sampler/build/position_fixed4/sanitize
+Consolidate compiler generated dependencies of target math_probe
+Consolidate compiler generated dependencies of target native_phase_hook_test
+Consolidate compiler generated dependencies of target native_soft_phase_test
+[  1%] Built target math_probe
+Consolidate compiler generated dependencies of target preparation_probe_frozen
+[  3%] Built target native_phase_hook_test
+[  4%] Built target native_soft_phase_test
+[  6%] Built target preparation_probe_frozen
+Consolidate compiler generated dependencies of target frozen_ab_core
+[ 10%] Built target frozen_ab_core
+Consolidate compiler generated dependencies of target lia_core
+[ 13%] Building CXX object CMakeFiles/lia_core.dir/src/global.cpp.o
+[ 13%] Building CXX object CMakeFiles/lia_core.dir/src/local.cpp.o
+[ 13%] Building CXX object CMakeFiles/lia_core.dir/src/core.cpp.o
+[ 14%] Building CXX object CMakeFiles/lia_core.dir/src/control.cpp.o
+[ 15%] Building CXX object CMakeFiles/lia_core.dir/src/scheduler.cpp.o
+[ 16%] Building CXX object CMakeFiles/lia_core.dir/src/search.cpp.o
+[ 17%] Building CXX object CMakeFiles/lia_core.dir/src/line.cpp.o
+[ 17%] Building CXX object CMakeFiles/lia_core.dir/src/stream.cpp.o
+[ 18%] Building CXX object CMakeFiles/lia_core.dir/src/coverage_block_generator.cpp.o
+[ 19%] Building CXX object CMakeFiles/lia_core.dir/src/residual_coverage.cpp.o
+[ 20%] Building CXX object CMakeFiles/lia_core.dir/src/macro_choice.cpp.o
+[ 21%] Building CXX object CMakeFiles/lia_core.dir/src/plateau_tracker.cpp.o
+[ 22%] Building CXX object CMakeFiles/lia_core.dir/src/lia_choice_compiler.cpp.o
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp: In function ‘lia::CompileMode lia::parse_compile_mode(const string&)’:
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:284:5: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+  284 |     if(s=="plain")return CompileMode::Plain;if(s=="simplify_only")return CompileMode::SimplifyOnly;
+      |     ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:284:45: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+  284 |     if(s=="plain")return CompileMode::Plain;if(s=="simplify_only")return CompileMode::SimplifyOnly;
+      |                                             ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:285:5: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+  285 |     if(s=="eq_only")return CompileMode::EqOnly;if(s=="choice_only")return CompileMode::ChoiceOnly;
+      |     ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:285:48: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+  285 |     if(s=="eq_only")return CompileMode::EqOnly;if(s=="choice_only")return CompileMode::ChoiceOnly;
+      |                                                ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:286:5: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+  286 |     if(s=="full"||s=="choice_compiled")return CompileMode::Full;throw std::invalid_argument("unknown compilation mode");
+      |     ^~
+/mnt/Space0/SMT_Sampling/lia_cover_sampler/src/lia_choice_compiler.cpp:286:65: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+  286 |     if(s=="full"||s=="choice_compiled")return CompileMode::Full;throw std::invalid_argument("unknown compilation mode");
+      |                                                                 ^~~~~
+[ 23%] Linking CXX static library liblia_core.a
+[ 23%] Built target lia_core
+Consolidate compiler generated dependencies of target bounded_delivery
+Consolidate compiler generated dependencies of target output_refiner
+Consolidate compiler generated dependencies of target coverage_block_probe
+Consolidate compiler generated dependencies of target snapshot_probe
+Consolidate compiler generated dependencies of target repair_test
+Consolidate compiler generated dependencies of target preparation_probe
+Consolidate compiler generated dependencies of target residual_state_test
+Consolidate compiler generated dependencies of target coverage_block_test
+Consolidate compiler generated dependencies of target diagnostic_test
+Consolidate compiler generated dependencies of target preparation_reuse_test
+Consolidate compiler generated dependencies of target search_test
+Consolidate compiler generated dependencies of target line_test
+Consolidate compiler generated dependencies of target core_test
+Consolidate compiler generated dependencies of target lia_cover_sampler
+[ 29%] Building CXX object CMakeFiles/repair_test.dir/tests/repair_test.cpp.o
+[ 29%] Building CXX object CMakeFiles/output_refiner.dir/src/output_refiner.cpp.o
+[ 29%] Building CXX object CMakeFiles/bounded_delivery.dir/src/bounded_delivery.cpp.o
+[ 29%] Building CXX object CMakeFiles/coverage_block_probe.dir/src/coverage_block_probe.cpp.o
+[ 29%] Building CXX object CMakeFiles/snapshot_probe.dir/src/snapshot_probe.cpp.o
+[ 33%] Building CXX object CMakeFiles/diagnostic_test.dir/tests/diagnostic_test.cpp.o
+[ 34%] Building CXX object CMakeFiles/preparation_probe.dir/src/preparation_probe.cpp.o
+[ 34%] Building CXX object CMakeFiles/search_test.dir/tests/search_test.cpp.o
+[ 34%] Building CXX object CMakeFiles/residual_state_test.dir/tests/residual_state_test.cpp.o
+[ 34%] Building CXX object CMakeFiles/coverage_block_test.dir/tests/coverage_block_test.cpp.o
+[ 34%] Building CXX object CMakeFiles/preparation_reuse_test.dir/tests/preparation_reuse_test.cpp.o
+[ 34%] Building CXX object CMakeFiles/line_test.dir/tests/line_test.cpp.o
+[ 34%] Building CXX object CMakeFiles/core_test.dir/tests/core_test.cpp.o
+[ 35%] Building CXX object CMakeFiles/lia_cover_sampler.dir/src/main.cpp.o
+Consolidate compiler generated dependencies of target soft_phase_core
+[ 36%] Building CXX object CMakeFiles/soft_phase_core.dir/src/soft_phase_bridge.cpp.o
+[ 37%] Building CXX object CMakeFiles/soft_phase_core.dir/src/conditional_observation.cpp.o
+[ 38%] Linking CXX executable residual_state_test
+[ 39%] Linking CXX static library libbounded_delivery.a
+[ 39%] Built target bounded_delivery
+Consolidate compiler generated dependencies of target residual_online_probe
+[ 40%] Building CXX object CMakeFiles/residual_online_probe.dir/src/residual_online_probe.cpp.o
+[ 42%] Linking CXX static library liboutput_refiner.a
+[ 42%] Linking CXX executable repair_test
+[ 43%] Linking CXX executable snapshot_probe
+[ 44%] Linking CXX executable coverage_block_probe
+[ 45%] Linking CXX executable preparation_probe
+[ 46%] Linking CXX executable line_test
+[ 46%] Built target output_refiner
+[ 46%] Built target repair_test
+[ 47%] Linking CXX executable diagnostic_test
+Consolidate compiler generated dependencies of target choice_catalog_probe
+Consolidate compiler generated dependencies of target residual_cardinality_test
+[ 49%] Building CXX object CMakeFiles/residual_cardinality_test.dir/tests/residual_cardinality_test.cpp.o
+[ 49%] Building CXX object CMakeFiles/choice_catalog_probe.dir/src/choice_catalog_probe.cpp.o
+[ 50%] Linking CXX executable preparation_reuse_test
+[ 51%] Linking CXX executable coverage_block_test
+[ 51%] Built target coverage_block_probe
+[ 51%] Built target snapshot_probe
+[ 51%] Built target preparation_probe
+[ 52%] Linking CXX executable choice_catalog_probe
+[ 52%] Built target line_test
+Consolidate compiler generated dependencies of target choice_catalog_test
+Consolidate compiler generated dependencies of target macro_online_probe
+Consolidate compiler generated dependencies of target macro_choice_test
+[ 53%] Building CXX object CMakeFiles/choice_catalog_test.dir/tests/choice_catalog_test.cpp.o
+[ 54%] Building CXX object CMakeFiles/macro_online_probe.dir/src/macro_online_probe.cpp.o
+[ 54%] Building CXX object CMakeFiles/macro_choice_test.dir/tests/macro_choice_test.cpp.o
+Consolidate compiler generated dependencies of target query_exit_test
+[ 55%] Building CXX object CMakeFiles/query_exit_test.dir/tests/query_exit_test.cpp.o
+[ 55%] Built target diagnostic_test
+Consolidate compiler generated dependencies of target macro_diagnostic_probe
+[ 56%] Building CXX object CMakeFiles/macro_diagnostic_probe.dir/src/macro_diagnostic_probe.cpp.o
+[ 56%] Built target coverage_block_test
+[ 56%] Built target preparation_reuse_test
+[ 57%] Linking CXX executable core_test
+Consolidate compiler generated dependencies of target macro_retry_test
+Consolidate compiler generated dependencies of target macro_retry_probe
+[ 59%] Building CXX object CMakeFiles/macro_retry_probe.dir/src/macro_retry_probe.cpp.o
+[ 59%] Building CXX object CMakeFiles/macro_retry_test.dir/tests/macro_retry_test.cpp.o
+[ 60%] Linking CXX executable residual_online_probe
+[ 61%] Linking CXX executable search_test
+[ 62%] Linking CXX executable choice_catalog_test
+[ 63%] Linking CXX static library libsoft_phase_core.a
+[ 63%] Built target core_test
+Consolidate compiler generated dependencies of target lia_choice_compiler_test
+[ 64%] Building CXX object CMakeFiles/lia_choice_compiler_test.dir/tests/lia_choice_compiler_test.cpp.o
+[ 65%] Linking CXX executable macro_diagnostic_probe
+[ 66%] Linking CXX executable query_exit_test
+[ 67%] Linking CXX executable macro_choice_test
+[ 67%] Built target search_test
+[ 68%] Linking CXX executable residual_cardinality_test
+Consolidate compiler generated dependencies of target bofill_sampler
+[ 69%] Building CXX object CMakeFiles/bofill_sampler.dir/src/bofill_sampler.cpp.o
+[ 70%] Linking CXX executable macro_retry_test
+[ 70%] Built target soft_phase_core
+Consolidate compiler generated dependencies of target bofill_first_sat_probe
+[ 71%] Building CXX object CMakeFiles/bofill_first_sat_probe.dir/src/bofill_first_sat_probe.cpp.o
+[ 71%] Built target residual_state_test
+Consolidate compiler generated dependencies of target bofill_fallback_test
+[ 72%] Building CXX object CMakeFiles/bofill_fallback_test.dir/tests/bofill_fallback_test.cpp.o
+[ 73%] Linking CXX executable lia_choice_compiler_test
+[ 74%] Linking CXX executable macro_online_probe
+[ 75%] Linking CXX executable lia_cover_sampler
+[ 75%] Built target lia_choice_compiler_test
+Consolidate compiler generated dependencies of target soft_phase_sampler
+[ 76%] Building CXX object CMakeFiles/soft_phase_sampler.dir/src/soft_phase_sampler.cpp.o
+[ 77%] Linking CXX executable macro_retry_probe
+[ 78%] Linking CXX executable bofill_fallback_test
+[ 78%] Built target bofill_fallback_test
+Consolidate compiler generated dependencies of target soft_phase_test
+[ 79%] Building CXX object CMakeFiles/soft_phase_test.dir/tests/soft_phase_test.cpp.o
+[ 80%] Linking CXX executable bofill_first_sat_probe
+[ 80%] Linking CXX executable bofill_sampler
+[ 80%] Built target residual_online_probe
+Consolidate compiler generated dependencies of target ab_sampler
+[ 81%] Building CXX object CMakeFiles/ab_sampler.dir/src/ab_adapter.cpp.o
+[ 81%] Built target bofill_sampler
+Consolidate compiler generated dependencies of target ab_replay
+[ 82%] Building CXX object CMakeFiles/ab_replay.dir/src/ab_replay.cpp.o
+[ 83%] Linking CXX executable soft_phase_sampler
+[ 84%] Linking CXX executable soft_phase_test
+[ 84%] Built target lia_cover_sampler
+Consolidate compiler generated dependencies of target preservation_test
+[ 85%] Built target residual_cardinality_test
+[ 85%] Building CXX object CMakeFiles/preservation_test.dir/tests/preservation_test.cpp.o
+Consolidate compiler generated dependencies of target ab_gate_test
+[ 86%] Linking CXX executable ab_gate_test
+[ 86%] Built target ab_gate_test
+[ 86%] Built target choice_catalog_probe
+Consolidate compiler generated dependencies of target native_phase_feedback
+[ 87%] Building CXX object CMakeFiles/native_phase_feedback.dir/src/native_phase_feedback.cpp.o
+Consolidate compiler generated dependencies of target bounded_delivery_replay
+[ 88%] Building CXX object CMakeFiles/bounded_delivery_replay.dir/tests/bounded_delivery_replay.cpp.o
+[ 88%] Linking CXX executable preservation_test
+[ 89%] Linking CXX executable ab_replay
+[ 90%] Linking CXX executable bounded_delivery_replay
+[ 90%] Built target choice_catalog_test
+[ 90%] Built target preservation_test
+[ 90%] Built target bounded_delivery_replay
+[ 90%] Built target macro_diagnostic_probe
+[ 90%] Built target query_exit_test
+[ 90%] Built target macro_choice_test
+[ 90%] Built target ab_replay
+[ 90%] Built target macro_retry_test
+[ 91%] Linking CXX executable ab_sampler
+[ 91%] Built target bofill_first_sat_probe
+[ 91%] Built target macro_online_probe
+[ 91%] Built target macro_retry_probe
+[ 92%] Linking CXX static library libnative_phase_feedback.a
+[ 92%] Built target ab_sampler
+[ 92%] Built target native_phase_feedback
+Consolidate compiler generated dependencies of target native_feedback_sampler
+Consolidate compiler generated dependencies of target native_delivery_sampler
+Consolidate compiler generated dependencies of target bounded_delivery_test
+Consolidate compiler generated dependencies of target native_feedback_test
+[ 95%] Building CXX object CMakeFiles/native_feedback_sampler.dir/src/native_feedback_sampler.cpp.o
+[ 95%] Building CXX object CMakeFiles/native_delivery_sampler.dir/src/native_delivery_sampler.cpp.o
+[ 95%] Building CXX object CMakeFiles/bounded_delivery_test.dir/tests/bounded_delivery_test.cpp.o
+[ 96%] Building CXX object CMakeFiles/native_feedback_test.dir/tests/native_feedback_test.cpp.o
+[ 96%] Built target soft_phase_sampler
+[ 96%] Built target soft_phase_test
+[ 97%] Linking CXX executable bounded_delivery_test
+[ 97%] Built target bounded_delivery_test
+[ 98%] Linking CXX executable native_feedback_sampler
+[ 99%] Linking CXX executable native_feedback_test
+[ 99%] Built target native_feedback_test
+[ 99%] Built target native_feedback_sampler
+[100%] Linking CXX executable native_delivery_sampler
+[100%] Built target native_delivery_sampler

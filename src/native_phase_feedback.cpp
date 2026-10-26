@@ -62,11 +62,11 @@ bool NativeAtom::truth(const Assignment&m) const {
     switch(relation){case Z3_OP_EQ:r=v==0;break;case Z3_OP_LE:r=v<=0;break;case Z3_OP_LT:r=v<0;break;case Z3_OP_GE:r=v>=0;break;case Z3_OP_GT:r=v>0;break;default:throw std::logic_error("unsupported relation");}
     return r!=negated;
 }
-NativePhaseFeedback::NativePhaseFeedback(Formula&f,z3::solver&s,Budget&b,const std::string&mode,unsigned seed,bool random_position):
-    f_(f),budget_(b),solver_(s),mode_(mode),rng_(uint64_t(seed)^0xd7846ba219ULL),position_rng_(uint64_t(seed)^0x8a5cd789635d2dffULL),random_position_(random_position),quota_seconds(.05*b.seconds){
+NativePhaseFeedback::NativePhaseFeedback(Formula&f,z3::solver&s,Budget&b,const std::string&mode,unsigned seed,NativePositionPolicy position):
+    f_(f),budget_(b),solver_(s),mode_(mode),rng_(uint64_t(seed)^0xd7846ba219ULL),position_rng_(uint64_t(seed)^0x8a5cd789635d2dffULL),position_policy_(position),quota_seconds(.05*b.seconds){
     auto began=Clock::now();variable_related_.resize(f.variables.size());
     for(unsigned i=0;i<f.nodes.size();++i){original_[f.nodes[i].expr.id()]=i;
-        if((i&63)==63&&(b.done()||seconds(began)>=quota_seconds)){stop_reason="feature_initialization_budget";mechanism_seconds+=seconds(began);return;}}
+        if((i&63)==63&&(b.done()||seconds(began)>=quota_seconds)){stop_reason="feature_initialization_budget";mechanism_seconds+=seconds(began);note_stop();return;}}
     for(unsigned i=0;i<f.variables.size();++i){
         int node=f.variables[i];if(f.nodes[node].expr.is_int())variables_[f.nodes[node].expr.id()]=i;
         std::set<int> seen;std::vector<int> queue{node};
@@ -74,13 +74,16 @@ NativePhaseFeedback::NativePhaseFeedback(Formula&f,z3::solver&s,Budget&b,const s
             for(auto [parent,position]:f.nodes[n].parents){(void)position;if(queue.size()<64)queue.push_back(parent);}}
         if(b.done()||seconds(began)>=quota_seconds){stop_reason="feature_initialization_budget";break;}
     }
-    attempts.reserve(32);mechanism_seconds+=seconds(began);
+    attempts.reserve(32);mechanism_seconds+=seconds(began);note_stop();
 }
 NativePhaseFeedback::~NativePhaseFeedback(){try{clear();}catch(...) {}}
+void NativePhaseFeedback::note_stop(){
+    if(!stop_reason.empty()&&stop_at_seconds<0){stop_at_seconds=budget_.elapsed();stop_cost_seconds=mechanism_seconds;stop_query=active_query_;}
+}
 bool NativePhaseFeedback::available(){
     if(stop_reason.empty()&&mechanism_seconds>=quota_seconds)stop_reason="mechanism_cost_quota";
     if(stop_reason.empty()&&budget_.done())stop_reason=interrupted?"external_cancel":"session_deadline";
-    return stop_reason.empty();
+    note_stop();return stop_reason.empty();
 }
 void NativePhaseFeedback::charge(double t){mechanism_seconds+=std::max(0.,t);available();}
 void NativePhaseFeedback::set_catalog(const ConditionalObservations&summary){
@@ -111,7 +114,7 @@ Affine NativePhaseFeedback::parse_linear(const z3::expr&e,NativeAtom&entry,unsig
 }
 NativeAtom* NativePhaseFeedback::classify(const z3::expr&atom){
     if(auto found=cache_.find(atom.id());found!=cache_.end())return found->second.get();
-    if(cache_.size()>=cache_cap){stop_reason="cache_cap";return nullptr;}
+    if(cache_.size()>=cache_cap){stop_reason="cache_cap";note_stop();return nullptr;}
     auto entry=std::make_unique<NativeAtom>(atom,entries_.size());NativeAtom* p=entry.get();
     auto original=original_.find(atom.id());if(original!=original_.end())p->original_node=original->second;
     try{
@@ -141,7 +144,7 @@ NativeFeatures NativePhaseFeedback::features(NativeAtom&a,bool native,unsigned d
 }
 int NativePhaseFeedback::callback(void*opaque,Z3_ast atom,bool native,unsigned ordinal,unsigned conflicts) noexcept {
     auto*self=static_cast<NativePhaseFeedback*>(opaque);
-    try{return self->on_decision(atom,native,ordinal,conflicts);}catch(...){self->stop_reason="callback_exception";return 3;}
+    try{return self->on_decision(atom,native,ordinal,conflicts);}catch(...){self->stop_reason="callback_exception";self->note_stop();return 3;}
 }
 int NativePhaseFeedback::on_decision(Z3_ast atom,bool native,unsigned ordinal,unsigned conflicts){
     auto began=Clock::now();
@@ -151,7 +154,7 @@ int NativePhaseFeedback::on_decision(Z3_ast atom,bool native,unsigned ordinal,un
         attempts.push_back({ordinal,conflicts,a?int(a->cache_index):-1,!a?stop_reason:!a->supported?a->reason:"outside_catalog"});
         auto elapsed=seconds(began);feature_seconds+=elapsed;charge(elapsed);return available()?0:3;
     }
-    if(random_position_){
+    if(position_policy_!=NativePositionPolicy::FixedFirst){
         auto reason=position_.visit(a->expression.id(),ordinal);
         if(reason!="selected"){
             attempts.push_back({ordinal,conflicts,int(a->cache_index),reason,position_.rank});
@@ -162,22 +165,25 @@ int NativePhaseFeedback::on_decision(Z3_ast atom,bool native,unsigned ordinal,un
             return available()?0:3;
         }
     }
+    target_arrived_=true;
     auto x=features(*a,native,ordinal,conflicts);for(double v:x)if(!std::isfinite(v)){stop_reason="nonfinite_feature";charge(seconds(began));attempts.push_back({ordinal,conflicts,int(a->cache_index),stop_reason});return 3;}
     double prep=seconds(began);feature_seconds+=prep;charge(prep);if(!available()){attempts.push_back({ordinal,conflicts,int(a->cache_index),stop_reason.empty()?"session_deadline":stop_reason});return 3;}
     auto t=Clock::now();auto choice=learner.choose(x,rng_,mode_=="native_feedback_one",budget_.seconds);
+    action_drawn_=true;action_draw_=choice.action_draw;++action_draw_count_;
     auto pred=seconds(t);prediction_seconds+=pred;charge(pred);if(!available()){attempts.push_back({ordinal,conflicts,int(a->cache_index),stop_reason.empty()?"session_deadline":stop_reason});return 3;}
     decision.selected=true;decision.native_truth=native;decision.desired_truth=native!=(choice.action==PhaseAction::FlipOnce);
     decision.ordinal=ordinal;decision.conflicts=conflicts;decision.atom=a;decision.features=x;decision.choice=choice;decision.training_counts=learner.feedback_counts;
-    decision.supported_rank=random_position_?position_.rank:1;
+    decision.supported_rank=position_policy_!=NativePositionPolicy::FixedFirst?position_.rank:1;
     attempts.push_back({ordinal,conflicts,int(a->cache_index),"selected",decision.supported_rank});
     return choice.action==PhaseAction::FlipOnce?2:1;
 }
 void NativePhaseFeedback::prepare(const Coverage&c,const Assignment*m,unsigned version,unsigned query,unsigned grant,double recent_zero,double last_cost,bool last_timeout){
-    clear();decision=NativeDecision{};decision.query=query;decision.coverage_version=version;attempts.clear();hook_log="{}";
-    position_eligible_=false;position_.reset(1);
+    clear();active_query_=query;decision=NativeDecision{};decision.query=query;decision.coverage_version=version;attempts.clear();hook_log="{}";
+    position_eligible_=false;position_.reset(1);action_drawn_=false;action_draw_=-1;target_arrived_=false;
     if(!version||!available())return;
     position_eligible_=true;
-    if(random_position_)position_.reset(std::uniform_int_distribution<unsigned>(1,4)(position_rng_));
+    if(position_policy_==NativePositionPolicy::UniformOneToFour)position_.reset(std::uniform_int_distribution<unsigned>(1,4)(position_rng_));
+    else if(position_policy_==NativePositionPolicy::FixedFourth)position_.reset(4);
     coverage_=&c;last_model_=m;coverage_ratio_=f_.total_bits()?double(c.covered())/f_.total_bits():0;
     recent_zero_=recent_zero;last_cost_=last_cost;last_timeout_=last_timeout;granted_ms_=grant;
     if(version&&available()){Z3_solver_set_native_phase_callback(f_.ctx,solver_,callback,this,query);f_.ctx.check_error();installed_=true;}
@@ -211,10 +217,19 @@ std::string NativePhaseFeedback::attempts_json() const {
     std::ostringstream o;o<<'[';bool comma=false;for(auto&a:attempts){if(comma)o<<',';comma=true;o<<"{\"ordinal\":"<<a.ordinal<<",\"conflicts\":"<<a.conflicts<<",\"cache_index\":"<<a.cache_index<<",\"reason\":"<<quote(a.reason)<<",\"supported_rank\":"<<a.supported_rank<<'}';}return o.str()+']';
 }
 std::string NativePhaseFeedback::position_json() const {
-    std::ostringstream o;o<<"{\"eligible\":"<<(position_eligible_?"true":"false")<<",\"policy\":"<<quote(random_position_?"random_supported_rank":"first")
-        <<",\"target\":"<<position_.target<<",\"distinct_supported\":"<<(random_position_?position_.rank:unsigned(decision.selected))
-        <<",\"reached\":"<<(decision.selected?"true":"false")<<",\"selected_rank\":"<<decision.supported_rank
+    std::ostringstream o;o<<"{\"eligible\":"<<(position_eligible_?"true":"false")<<",\"policy\":"<<quote(position_policy_name(position_policy_))
+        <<",\"target\":"<<position_.target<<",\"distinct_supported\":"<<(position_policy_!=NativePositionPolicy::FixedFirst?position_.rank:unsigned(decision.selected))
+        <<",\"reached\":"<<(decision.selected?"true":"false")<<",\"target_arrived\":"<<(target_arrived_?"true":"false")<<",\"selected_rank\":"<<decision.supported_rank
         <<",\"reason\":"<<quote(decision.selected?"selected":!position_eligible_?"disabled":!stop_reason.empty()?stop_reason:"target_not_reached")<<'}';return o.str();
+}
+std::string NativePhaseFeedback::mechanism_json() const {
+    std::ostringstream o;o<<std::setprecision(17)<<"{\"policy\":"<<quote(position_policy_name(position_policy_))
+        <<",\"quota_seconds\":"<<quota_seconds<<",\"charged_seconds\":"<<mechanism_seconds
+        <<",\"feature_seconds\":"<<feature_seconds<<",\"prediction_seconds\":"<<prediction_seconds
+        <<",\"stop_reason\":"<<quote(stop_reason)<<",\"stop_at_seconds\":"<<stop_at_seconds
+        <<",\"stop_query\":"<<stop_query<<",\"stop_cost_seconds\":"<<stop_cost_seconds
+        <<",\"action_drawn\":"<<(action_drawn_?"true":"false")<<",\"action_draw\":"<<action_draw_
+        <<",\"action_draw_count\":"<<action_draw_count_<<'}';return o.str();
 }
 std::string NativePhaseFeedback::new_atoms_jsonl(){
     std::ostringstream o;

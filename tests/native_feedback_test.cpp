@@ -86,6 +86,10 @@ void classification(){
     Coverage cov(f);policy.prepare(cov,nullptr,0,0,50,0,0,false);auto r=policy.check();require(r==z3::sat&&!policy.decision.selected,"first model intervened");
     NativePhaseFeedback protected_policy(f,solver,budget,"native_feedback_one",0);protected_policy.quota_seconds=0;
     protected_policy.prepare(cov,&zero,1,1,50,0,0,false);r=protected_policy.check();require(r==z3::sat&&!protected_policy.decision.selected,"quota created action");
+    require(protected_policy.stop_reason=="mechanism_cost_quota"&&protected_policy.stop_at_seconds>=0&&protected_policy.stop_query==1,"quota stop evidence missing");
+    auto stopped=protected_policy.stop_at_seconds;auto cost=protected_policy.stop_cost_seconds;
+    protected_policy.charge(.01);protected_policy.prepare(cov,&zero,1,2,50,0,0,false);
+    require(protected_policy.stop_at_seconds==stopped&&protected_policy.stop_cost_seconds==cost&&protected_policy.stop_query==1,"first stop overwritten");
 }
 }
 int main(){try{native_interface();learning();classification();std::cout<<"{\"passed\":true,\"finite_models\":16,\"disabled_keep_trace_equal\":true}\n";return 0;}catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}

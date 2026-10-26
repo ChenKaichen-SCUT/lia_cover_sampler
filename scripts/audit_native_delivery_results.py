@@ -105,27 +105,32 @@ def one_run(task):
         if not tail:require(gpacked==dpacked,'drained generation/delivery full states differ')
         if generation:require(bs[0]['members']==[1] and bs[0]['reason']=='first_model','first model waited')
         # Replay both RNG streams without consulting delivery history.
-        action_rng=MT64(spec['seed']^0xd7846ba219);position_rng=MT64(spec['seed']^0x8a5cd789635d2dff);at={a['cache_index']:a for a in atoms};gv=0
+        action_rng=MT64(spec['seed']^0xd7846ba219);position_rng=MT64(spec['seed']^0x8a5cd789635d2dff);at={a['cache_index']:a for a in atoms};gv=0;action_draw_count=0
         for i,(q,p,cost) in enumerate(zip(qs,ps,costs)):
             require(q['query']==p['query']==cost['query']==i and q['generation_version_before']==gv,'query generation chronology');require(q['decision']==p['decision'],'decision association')
             h=p['hook'];d=p['decision'];pos=p['position'];selected=d['selected'];require(h.get('selected',0)==int(selected) and h.get('flips',0)<=1 and h.get('decisions_examined',0)<=32,'native opportunity/window')
             if not gv:require(not selected and not h and not pos['eligible'],'intervened before first')
             if pos['eligible']:
-                target=1 if spec['configuration'].startswith('first_') else (position_rng.next()>>62)+1;require(pos['target']==target,'position RNG consumed by delivery or incorrect target')
+                target=1 if spec['configuration'].startswith('first_') else 4 if spec['configuration']=='fixed4_immediate' else (position_rng.next()>>62)+1;require(pos['target']==target,'position RNG consumed by delivery or incorrect target')
                 counts['target_'+str(target)]+=1;counts['position_eligible']+=1
                 seen_atoms=set();rank=0
                 for a in p['attempts']:
                     if a['reason'] not in ['selected','position_before_target','duplicate_supported_atom']:continue
                     atom=at[a['cache_index']];require(atom['supported'],'unsupported positional count')
                     if a['cache_index'] not in seen_atoms:seen_atoms.add(a['cache_index']);rank+=1
-                    if spec['configuration'].startswith('position_'):require(rank==a['supported_rank'],'repeated atom counted as new rank')
+                    if not spec['configuration'].startswith('first_'):require(rank==a['supported_rank'],'repeated atom counted as new rank')
                     if a['reason']=='selected':require(rank==target,'selected wrong supported rank')
                 if not selected:
                     counts['target_not_reached']+=1
                     counts['not_selected_reason_'+pos['reason']]+=1
+            mechanism=p.get('mechanism');draw=None
+            if (mechanism and mechanism['action_drawn']) or (mechanism is None and selected):
+                draw=action_rng.next()/2**64;action_draw_count+=1
+                if mechanism:require(abs(draw-mechanism['action_draw'])<1e-15,'actual action draw stream changed')
+            if mechanism:require(mechanism['action_draw_count']==action_draw_count,'action draw count mismatch')
             if selected:
                 require(d['coverage_version']==gv and d['probability']==.5 and not d['prediction_enabled'] and d['training_counts']==[0,0],'learning/propensity/history mismatch')
-                draw=action_rng.next()/2**64;require(abs(draw-d['action_draw'])<1e-15,'action RNG stream changed');flip=draw>=.5;require(d['action']==('FlipOnce' if flip else 'KeepNative'),'wrong random action')
+                require(draw is not None and abs(draw-d['action_draw'])<1e-15,'action RNG stream changed');flip=draw>=.5;require(d['action']==('FlipOnce' if flip else 'KeepNative'),'wrong random action')
                 require(d['desired_truth']==(d['native_truth']!=flip) and h['flips']==int(flip),'phase action mismatch');counts[d['action']]+=1;counts['reached_'+str(pos['target'])]+=1
             counts[q['evidence']['raw_status']]+=1
             if q['generated']:gv+=1;require(cache[gv]['query']==i,'candidate linked to refresh query')
