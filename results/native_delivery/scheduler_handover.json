@@ -1,0 +1,150 @@
+{
+  "authority": "User explicitly requests 15 threads; preserve running sampler processes",
+  "time_ns": 1793001018943399820,
+  "monotonic_ns": 1294701232438996,
+  "paused_controllers": [
+    60621,
+    61707
+  ],
+  "previous_progress": {
+    "status": "sampling",
+    "stage": "screen",
+    "total_groups": 6,
+    "completed_groups": 4,
+    "queued_groups": 1,
+    "active_groups": [
+      {
+        "group": 4,
+        "elapsed": 33.244744109,
+        "active_sessions": 4
+      }
+    ],
+    "max_concurrent_sessions": 4
+  },
+  "active": [
+    {
+      "run": "04_random_first_batch",
+      "gate": {
+        "start_monotonic_ns": 1294667831346635,
+        "exec_monotonic_ns": 1294667831619651
+      },
+      "ready": {
+        "pid": 66059,
+        "affinity": [
+          2
+        ],
+        "address_space_bytes": 6442450944,
+        "per_file_bytes": 1073741824
+      },
+      "spec": {
+        "group": 4,
+        "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+        "seed": 2,
+        "configuration": "first_batch",
+        "seconds": 120,
+        "core": 2,
+        "command": [
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/native_delivery/release/native_delivery_sampler",
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/native_delivery/screen_120s/inputs/SMT_random_LIA_ex14600_2600_100.smt2",
+          "first_batch",
+          "120",
+          "2",
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/native_delivery/screen_120s/runs/04_random_first_batch/raw"
+        ]
+      }
+    },
+    {
+      "run": "04_random_first_immediate",
+      "gate": {
+        "start_monotonic_ns": 1294667831346635,
+        "exec_monotonic_ns": 1294667831604243
+      },
+      "ready": {
+        "pid": 66058,
+        "affinity": [
+          0
+        ],
+        "address_space_bytes": 6442450944,
+        "per_file_bytes": 1073741824
+      },
+      "spec": {
+        "group": 4,
+        "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+        "seed": 2,
+        "configuration": "first_immediate",
+        "seconds": 120,
+        "core": 0,
+        "command": [
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/native_delivery/release/native_delivery_sampler",
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/native_delivery/screen_120s/inputs/SMT_random_LIA_ex14600_2600_100.smt2",
+          "first_immediate",
+          "120",
+          "2",
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/native_delivery/screen_120s/runs/04_random_first_immediate/raw"
+        ]
+      }
+    },
+    {
+      "run": "04_random_position_batch",
+      "gate": {
+        "start_monotonic_ns": 1294667831346635,
+        "exec_monotonic_ns": 1294667831609178
+      },
+      "ready": {
+        "pid": 66061,
+        "affinity": [
+          6
+        ],
+        "address_space_bytes": 6442450944,
+        "per_file_bytes": 1073741824
+      },
+      "spec": {
+        "group": 4,
+        "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+        "seed": 2,
+        "configuration": "position_batch",
+        "seconds": 120,
+        "core": 6,
+        "command": [
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/native_delivery/release/native_delivery_sampler",
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/native_delivery/screen_120s/inputs/SMT_random_LIA_ex14600_2600_100.smt2",
+          "position_batch",
+          "120",
+          "2",
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/native_delivery/screen_120s/runs/04_random_position_batch/raw"
+        ]
+      }
+    },
+    {
+      "run": "04_random_position_immediate",
+      "gate": {
+        "start_monotonic_ns": 1294667831346635,
+        "exec_monotonic_ns": 1294667831611805
+      },
+      "ready": {
+        "pid": 66060,
+        "affinity": [
+          4
+        ],
+        "address_space_bytes": 6442450944,
+        "per_file_bytes": 1073741824
+      },
+      "spec": {
+        "group": 4,
+        "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+        "seed": 2,
+        "configuration": "position_immediate",
+        "seconds": 120,
+        "core": 4,
+        "command": [
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/native_delivery/release/native_delivery_sampler",
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/native_delivery/screen_120s/inputs/SMT_random_LIA_ex14600_2600_100.smt2",
+          "position_immediate",
+          "120",
+          "2",
+          "/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/native_delivery/screen_120s/runs/04_random_position_immediate/raw"
+        ]
+      }
+    }
+  ]
+}

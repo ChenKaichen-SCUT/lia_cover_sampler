@@ -1,0 +1,24 @@
+{
+  "authority": "User request: \u4f7f\u752815\u7ebf\u7a0b\u5e76\u884c\u5b8c\u6210",
+  "thread_budget": 15,
+  "full_quadruplet_slots": 3,
+  "effective_max_sampling": 12,
+  "observed_peak_sessions": 4,
+  "hardware": "16 logical CPUs / 8 physical cores; three quadruplets may share SMT siblings",
+  "preserved_original_plan_sha256": "99526e8563a123c06ff52adc9e139de8cdaf4af3df704d131bdba1cbf3fb8115",
+  "protected_frozen_files_verified": true,
+  "recovered_processes": [
+    "04_random_first_batch",
+    "04_random_first_immediate",
+    "04_random_position_batch",
+    "04_random_position_immediate",
+    "05_real_first_batch",
+    "05_real_first_immediate",
+    "05_real_position_batch",
+    "05_real_position_immediate"
+  ],
+  "no_sampler_restarted": true,
+  "no_sampler_interrupted": true,
+  "existing_results_unchanged": true,
+  "notes": "Groups 0-3 completed under the initial schedule. Group 5 was launched by the replacement coordinator. Actual gate/GNU-time evidence shows no overlap with group 4: the screen retained a peak of four samplers. This is not a uniform 15-thread rerun. Subsequent independent audit uses 15 workers; future complete quadruplet scheduling allows three concurrent groups."
+}
