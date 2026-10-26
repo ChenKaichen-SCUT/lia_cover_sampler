@@ -1,0 +1,106 @@
+{
+  "long_budget_signal_both_formulas": true,
+  "classification": "long_budget_gain_with_early_risk",
+  "formula_results": [
+    {
+      "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+      "long_budget_signal": true,
+      "endpoint": {
+        "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+        "metric": "time",
+        "checkpoint": 900,
+        "pairs": 7,
+        "missing": 0,
+        "wins": 7,
+        "ties": 0,
+        "losses": 0,
+        "mean": 62,
+        "median": 43,
+        "seed_differences": [
+          86,
+          33,
+          90,
+          99,
+          41,
+          43,
+          42
+        ],
+        "seed_order": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "positive_direction": "higher is better"
+      }
+    },
+    {
+      "formula": "SMT_real_LIA_ex8500_2400_100.smt2",
+      "long_budget_signal": true,
+      "endpoint": {
+        "formula": "SMT_real_LIA_ex8500_2400_100.smt2",
+        "metric": "time",
+        "checkpoint": 900,
+        "pairs": 7,
+        "missing": 0,
+        "wins": 7,
+        "ties": 0,
+        "losses": 0,
+        "mean": 81,
+        "median": 72,
+        "seed_differences": [
+          99,
+          64,
+          92,
+          32,
+          72,
+          177,
+          31
+        ],
+        "seed_order": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "positive_direction": "higher is better"
+      }
+    }
+  ],
+  "early_risks": [
+    {
+      "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+      "metric": "time",
+      "checkpoint": 10,
+      "losses": 5,
+      "kind": "repeated_early_regression"
+    },
+    {
+      "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+      "metric": "prefix",
+      "checkpoint": 10,
+      "losses": 5,
+      "kind": "repeated_early_regression"
+    }
+  ],
+  "resource_quality": {
+    "passed": true,
+    "all_pairs_synchronized": true,
+    "max_exec_skew_seconds": 0.00026182500000000004,
+    "all_within_250ms": true,
+    "max_observed_sampler_threads": 2,
+    "assigned_logical_cpus_per_sampler": 1,
+    "timeout_helper_included_in_os_thread_count": true,
+    "max_rss_kib": 152800,
+    "sampling_physical_cores": 7,
+    "configured_concurrent_sessions": 14,
+    "resource_audit_correction": "thread_audit_support/correction.json"
+  },
+  "automatic_next_experiment": false
+}

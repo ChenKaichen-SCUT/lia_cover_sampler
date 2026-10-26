@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_position_frozen_900s.py", line 67, in <module>
+    if __name__=='__main__':main()
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_position_frozen_900s.py", line 56, in main
+    plan=json.loads((out/'plan.json').read_text());resource=audit_resources(out,plan);names=[p.name for p in sorted((out/'runs').iterdir()) if p.is_dir()]
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/audit_position_frozen_900s.py", line 34, in audit_resources
+    require(max_threads<=1,'multithreaded sampler');offset=(g['exec_monotonic_ns']-g['start_monotonic_ns'])/1e9
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/reevaluate_round6_saved_candidates.py", line 42, in require
+    raise EvidenceError(message)
+reevaluate_round6_saved_candidates.EvidenceError: multithreaded sampler
