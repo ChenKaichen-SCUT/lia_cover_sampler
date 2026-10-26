@@ -1,0 +1,24 @@
+--- original/liasampler.cpp
++++ timed/liasampler.cpp
+@@ -5,6 +5,8 @@
+ #include <regex>
+ 
+ namespace sampler {
++static const auto lia_audit_process_start = std::chrono::steady_clock::now();
++
+ 
+ std::string processNegNumber(const std::string& input) {
+     std::regex pattern(R"(\(\s*(-\s*\d+)\s*\))");
+@@ -202,6 +204,12 @@
+             samplesFile << p.first << ":" << p.second << ";";
+         }
+         samplesFile << "\n";
++        samplesFile.flush();
++        static std::ofstream lia_audit_times(samplesFileDir + "/" +
++            extract_filename(smtFilePath) + ".times.csv");
++        lia_audit_times << num_samples << "," << std::chrono::duration<double>(
++            std::chrono::steady_clock::now() - lia_audit_process_start).count() << "\n";
++        lia_audit_times.flush();
+         num_samples++;
+ #ifdef VERBOSE
+         std::cout << "The " << num_samples << " sample is being generated ..." << std::endl;
