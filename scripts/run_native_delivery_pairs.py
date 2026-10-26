@@ -1,13 +1,26 @@
 #!/usr/bin/env python3
-"""Frozen quadruplets on four physical cores. No audits/builds during sampling."""
+"""Complete synchronized quadruplets under an explicit logical-thread budget."""
 import argparse,json,os,signal,subprocess,sys,time
 from pathlib import Path
 from datetime import datetime,timezone
-from run_native_feedback_pairs import ROOT,INPUTS,dump,sha,gate,slot_layout,execute_groups,sample_resources
+from run_native_feedback_pairs import ROOT,INPUTS,dump,sha,gate,slot_layout as single_group_layout,execute_groups,sample_resources
 CONFIGS=['first_immediate','first_batch','position_immediate','position_batch']
 BINARY=ROOT/'build/native_delivery/release/native_delivery_sampler'
 LIBRARY=ROOT/'dependencies/z3-native-feedback-phase/install/lib/libz3.so'
 BRANCH='native-position-bounded-delivery'
+
+def parallel_slot_layout(allowed,threads):
+    assert 4<=threads<=15,'sampling thread budget must be 4..15'
+    old,topology,spare=single_group_layout(allowed)
+    if threads==4:return old,topology,spare
+    physical={}
+    for r in topology:physical.setdefault((r['package'],r['physical_core']),[]).append(r['cpu'])
+    # Take one logical CPU per physical core before using sibling threads.
+    ordered=[cs[level] for level in range(max(map(len,physical.values()))) for cs in physical.values() if len(cs)>level]
+    slots=[ordered[i:i+4] for i in range(0,min(threads,len(ordered)-1)//4*4,4)]
+    identity={r['cpu']:(r['package'],r['physical_core']) for r in topology}
+    assert all(len({identity[c] for c in s})==4 for s in slots),'each paired quadruplet needs four distinct physical cores'
+    used={c for s in slots for c in s};return slots,topology,[c for c in reversed(ordered) if c not in used]
 
 def tasks_for_stage(inputs,stage,candidate=None):
     seeds={'exposure':[0],'screen':[0,1,2],'long':[3,4]}[stage]
@@ -18,7 +31,7 @@ def tasks_for_stage(inputs,stage,candidate=None):
 
 def main():
     if len(sys.argv)>1 and sys.argv[1]=='--gate':signal.signal(signal.SIGTERM,signal.SIG_IGN);gate(sys.argv[2]);return
-    p=argparse.ArgumentParser();p.add_argument('--out',type=Path,required=True);p.add_argument('--stage',choices=['exposure','screen','long'],required=True);p.add_argument('--decision',type=Path);p.add_argument('--postprocess',action='store_true');a=p.parse_args();os.chdir(ROOT)
+    p=argparse.ArgumentParser();p.add_argument('--out',type=Path,required=True);p.add_argument('--stage',choices=['exposure','screen','long'],required=True);p.add_argument('--decision',type=Path);p.add_argument('--postprocess',action='store_true');p.add_argument('--threads',type=int,default=15);a=p.parse_args();os.chdir(ROOT)
     assert subprocess.check_output(['git','branch','--show-current'],text=True).strip()==BRANCH
     assert not subprocess.check_output(['git','status','--short','--untracked-files=no'],text=True).strip(),'freeze tracked changes before sampling'
     seconds={'exposure':30,'screen':120,'long':900}[a.stage];seeds={'exposure':[0],'screen':[0,1,2],'long':[3,4]}[a.stage];configs=CONFIGS
@@ -26,7 +39,7 @@ def main():
     if a.stage=='long':
         assert a.decision is not None;decision=json.loads(a.decision.read_text());assert decision['enter_900'] and decision['selected'] in CONFIGS[1:] and decision['stage']=='screen' and decision['audit_passed'];configs=['first_immediate',decision['selected']]
         for path,wanted in decision['frozen_files'].items():assert sha(ROOT/path)==wanted,'screening artifact changed: '+path
-    out=a.out.resolve();out.mkdir(parents=True,exist_ok=False);(out/'inputs').mkdir();allowed=os.sched_getaffinity(0);slots,topology,spare=slot_layout(allowed)
+    out=a.out.resolve();out.mkdir(parents=True,exist_ok=False);(out/'inputs').mkdir();allowed=os.sched_getaffinity(0);slots,topology,spare=parallel_slot_layout(allowed,a.threads)
     for env in ['NATIVE_TEST_MAX_QUERIES','BOFILL_START_MONO_NS']:os.environ.pop(env,None)
     frozen=[BINARY,LIBRARY,ROOT/'CMakeLists.txt',ROOT/'docs/有界交付与干预位置实验协议.md',Path(__file__),ROOT/'scripts/audit_native_delivery_results.py',ROOT/'scripts/analyze_native_delivery_results.py']
     for directory in ['src','include']:frozen.extend(p for p in sorted((ROOT/directory).glob('*')) if p.is_file())
@@ -36,6 +49,7 @@ def main():
         source=ROOT/'benchmarks'/name;assert sha(source)==expected;target=out/'inputs'/name;target.write_bytes(source.read_bytes());inputs.append(dict(name=name,sha256=expected,path=str(target)))
     jobs=tasks_for_stage(inputs,a.stage,decision['selected'] if decision else None)
     manifest=dict(schema=1,kind=a.stage,seconds=seconds,seeds=seeds,configurations=configs,inputs=inputs,files=files,git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),max_concurrent_sessions=4,group_slots=slots,controller_core=spare[0],cpu_topology=topology,environment=subprocess.check_output(['lscpu'],text=True),memory=Path('/proc/meminfo').read_text(),library_links=subprocess.check_output(['ldd',str(BINARY)],text=True),created_utc=datetime.now(timezone.utc).isoformat(),highdiv_execution='forbidden; post-sampling read-only reference only',total_sessions=sum(map(len,jobs)),decision=decision,limits=dict(address_space_gib=6,per_file_gib=1,cleanup_grace_seconds=2))
+    manifest.update(requested_threads=a.threads,max_concurrent_sessions=4*len(slots),max_concurrent_groups=len(slots),concurrency_authority='explicit user instruction: 使用15线程并行完成; complete quadruplets, refill slots independently; SMT siblings across groups possible')
     dump(out/'plan.json',manifest);results=[];batches=[];last_progress=0;os.sched_setaffinity(0,{spare[0]})
     def launch(group,tasks,slot,cores):
         assert sha(BINARY)==files[str(BINARY.relative_to(ROOT))],'binary changed';batch=dict(group=group,slot=slot,running=[],last_resource=-1);batches.append(batch)
@@ -85,7 +99,7 @@ def main():
         nonlocal last_progress
         now=time.monotonic()
         if now-last_progress>=.5 or not active:
-            dump(out/'progress.json',dict(status='sampling',stage=a.stage,total_groups=len(jobs),completed_groups=finished,queued_groups=queued,active_groups=[dict(group=b['group'],elapsed=(time.monotonic_ns()-b['start'])/1e9,active_sessions=sum(r['p'].poll() is None for r in b['running'])) for b in active.values()],max_concurrent_sessions=4));last_progress=now
+            dump(out/'progress.json',dict(status='sampling',stage=a.stage,total_groups=len(jobs),completed_groups=finished,queued_groups=queued,active_groups=[dict(group=b['group'],elapsed=(time.monotonic_ns()-b['start'])/1e9,active_sessions=sum(r['p'].poll() is None for r in b['running'])) for b in active.values()],requested_threads=a.threads,max_concurrent_sessions=4*len(slots)));last_progress=now
     try:execute_groups(jobs,slots,launch,collect,release,progress)
     except Exception as exc:dump(out/'failure.json',dict(error=str(exc),automatic_retry=False));raise
     finally:

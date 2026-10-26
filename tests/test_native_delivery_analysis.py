@@ -1,6 +1,7 @@
 import unittest
 from analyze_native_delivery_results import gate_900
-from run_native_delivery_pairs import tasks_for_stage,CONFIGS
+from run_native_delivery_pairs import tasks_for_stage,CONFIGS,parallel_slot_layout
+import os
 
 def evidence(mode='position_immediate'):
     rows=[]
@@ -23,3 +24,8 @@ class NativeDeliveryAnalysis(unittest.TestCase):
             groups=tasks_for_stage(inputs,stage,'position_immediate');self.assertTrue(all(len(g)==4 for g in groups));self.assertEqual(sum(map(len,groups)),n)
             if stage=='long':self.assertEqual({s for g in groups for _,s,_ in g},{3,4})
         with self.assertRaises(AssertionError):tasks_for_stage(inputs,'long')
+        slots,topology,spare=parallel_slot_layout(os.sched_getaffinity(0),15)
+        self.assertEqual(len(slots),3);self.assertEqual(len({c for s in slots for c in s}),12)
+        self.assertTrue(set(spare).isdisjoint({c for s in slots for c in s}))
+        identity={r['cpu']:(r['package'],r['physical_core']) for r in topology}
+        self.assertTrue(all(len({identity[c] for c in s})==4 for s in slots))
