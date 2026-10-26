@@ -2,10 +2,12 @@
 import json,sys,tempfile,unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
 from run_native_frozen_900s import jobs,resource_victim,copy_highdiv,verify_frozen
 from analyze_native_frozen_900s import analyze,report,paired
 from reevaluate_round6_saved_candidates import dump,write_csv
+from run_native_feedback_pairs import sha
 
 class NativeFrozen900(unittest.TestCase):
     def test_exact_authorized_matrix_no_highdiv(self):
@@ -20,7 +22,18 @@ class NativeFrozen900(unittest.TestCase):
         for r in active[:2]:r['termination']=1
         self.assertEqual(resource_victim(active,samples),1)
     def test_frozen_identity_and_historical_evidence(self):
-        evidence=verify_frozen();self.assertIn('src/native_phase_feedback.cpp',evidence)
+        # The old controller must refuse a newer research tree. Its historical
+        # binaries and library must nevertheless remain byte-for-byte frozen.
+        prior=json.loads((ROOT/'results/native_feedback/screen_120s/plan.json').read_text())
+        expected={p:h for p,h in prior['files'].items() if p.startswith(('src/','include/','dependencies/')) or p in ('CMakeLists.txt','build/native_feedback/release/native_feedback_sampler')}
+        expected['dependencies/z3-native-feedback-phase/install/lib/libz3.so']=prior['z3_sha256']
+        for p in ('build/native_feedback/release/native_feedback_sampler','dependencies/z3-native-feedback-phase/install/lib/libz3.so'):self.assertEqual(sha(ROOT/p),expected[p])
+        if any(sha(ROOT/p)!=h for p,h in expected.items()):
+            with self.assertRaisesRegex(AssertionError,'frozen file changed'):verify_frozen()
+        else:self.assertIn('src/native_phase_feedback.cpp',verify_frozen())
+        # Keep the positive manifest-contract test independent of branch state.
+        with patch('run_native_frozen_900s.sha',side_effect=lambda p:expected[str(Path(p).relative_to(ROOT))]):
+            evidence=verify_frozen();self.assertIn('src/native_phase_feedback.cpp',evidence)
         with tempfile.TemporaryDirectory() as tmp:
             proof=copy_highdiv(Path(tmp));self.assertEqual(len(proof),4)
             ref=json.loads((Path(tmp)/'historical_highdiv.json').read_text())
