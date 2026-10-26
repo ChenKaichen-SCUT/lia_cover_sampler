@@ -27,7 +27,15 @@ class Bofill(unittest.TestCase):
     def test_unsat(self):
         s=self.audit(self.run_case('(assert false)'),'(assert false)');self.assertEqual(s['formal_count'],0)
     def test_bounded_time_no_sample_cap(self):
-        text='(declare-const x Int)(assert (>= x 0))';s=self.audit(self.run_case(text,seconds=.15),text);self.assertEqual(s['terminal'],'deadline');self.assertGreater(s['formal_count'],0)
+        # A 150ms wall budget can be consumed by instrumented initialization and
+        # a timely Unknown. Liveness is not a guarantee of a model in 150ms.
+        # This only changes the regression's observation window, not sampler
+        # defaults or any frozen performance experiment budget.
+        text='(declare-const x Int)(assert (>= x 0))'
+        seconds=1.0 if os.environ.get('ASAN_OPTIONS') else .15
+        s=self.audit(self.run_case(text,seconds=seconds),text);self.assertEqual(s['terminal'],'deadline');self.assertGreater(s['formal_count'],0)
+        if os.environ.get('ASAN_OPTIONS'):
+            tiny=self.audit(self.run_case(text,seconds=.15),text);self.assertEqual(tiny['terminal'],'deadline')
     def test_expired_parent_no_check(self):
         env=dict(os.environ,BOFILL_START_MONO_NS=str(time.monotonic_ns()-10**9));d=self.run_case('(declare-const x Int)(assert (>= x 0))',seconds=.01,env=env)
         self.assertEqual((d/'queries.jsonl').read_text(),'');self.assertEqual(json.loads((d/'summary.json').read_text())['formal_count'],0)

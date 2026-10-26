@@ -1,0 +1,14 @@
+test_bounded_time_no_sample_cap (test_bofill.Bofill) ... FAIL
+
+======================================================================
+FAIL: test_bounded_time_no_sample_cap (test_bofill.Bofill)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/tests/test_bofill.py", line 30, in test_bounded_time_no_sample_cap
+    text='(declare-const x Int)(assert (>= x 0))';s=self.audit(self.run_case(text,seconds=.15),text);self.assertEqual(s['terminal'],'deadline');self.assertGreater(s['formal_count'],0)
+AssertionError: 0 not greater than 0
+
+----------------------------------------------------------------------
+Ran 1 test in 4.126s
+
+FAILED (failures=1)
