@@ -1,0 +1,15 @@
+Running ['make', '-C', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/dependencies/z3-arith-coverage/build_sanitize', '-j6', '-W', 'smt/smt.a', 'libz3.so']
+Running ['make', '-C', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/dependencies/z3-arith-coverage/build_sanitize', '-j6', 'install']
+Running ['cmake', '-S', '/mnt/Space0/SMT_Sampling/lia_cover_sampler', '-B', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/arith_coverage/sanitize', '-DCMAKE_BUILD_TYPE=Debug', '-DCMAKE_CXX_FLAGS=-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer', '-DZ3_PREFIX=/mnt/Space0/SMT_Sampling/lia_cover_sampler/dependencies/z3-arith-coverage/install-sanitize', '-DLIA_ENABLE_SOFT_PHASE=ON', '-DLIA_ENABLE_NATIVE_FEEDBACK=ON', '-DLIA_ENABLE_ARITH_COVERAGE=ON']
+Running ['cmake', '--build', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/arith_coverage/sanitize', '-j6']
+Running ['python3', 'scripts/test_native_feedback_build.py', '--build', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/arith_coverage/sanitize', '--out', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/arith_coverage_v1/correctness/sanitize', '--sanitize']
+Traceback (most recent call last):
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/finalize_arith_coverage_validation.py", line 59, in <module>
+    if __name__=='__main__':main()
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/finalize_arith_coverage_validation.py", line 39, in main
+    run(['python3','scripts/test_native_feedback_build.py','--build',str(build),'--out',str(dest/'sanitize'),'--sanitize'],dest/'sanitize_tests.log',env)
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/finalize_arith_coverage_validation.py", line 12, in run
+    with log.open('w') as stream:subprocess.run(cmd,cwd=ROOT,env=env,stdout=stream,stderr=subprocess.STDOUT,check=True)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['python3', 'scripts/test_native_feedback_build.py', '--build', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/arith_coverage/sanitize', '--out', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/results/arith_coverage_v1/correctness/sanitize', '--sanitize']' returned non-zero exit status 1.

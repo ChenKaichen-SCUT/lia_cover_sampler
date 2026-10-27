@@ -1,0 +1,619 @@
+--- /dev/null
++++ b/src/smt/arith_sampling.h
+@@ -0,0 +1,36 @@
++#pragma once
++#include "ast/ast.h"
++#include <chrono>
++#include <functional>
++#include <memory>
++#include <sstream>
++#include <vector>
++#include <cstdint>
++namespace smt {
++using arith_choice_callback=std::function<unsigned(unsigned,unsigned,char const*const*,char const*)>;
++struct arith_sampling_state {
++    expr_ref root;
++    expr_ref_vector variables,terms;
++    arith_choice_callback callback;
++    uint64_t query_epoch=0,state_epoch=0,proposal_seed=0;
++    unsigned coverage_version=0,engine_seen=0,columns_scanned=0,columns_supported=0,nonzeros=0,pool_generated=0,pool_distinct=0;
++    unsigned selected=0,committed=0,invalid=0,duplicates=0;
++    bool active=true,consumed=false,in_callback=false,pool_complete=false,fatal=false;
++    double callback_remaining_seconds=0,allowance=0,hook_seconds=0,mapping_seconds=0,proposal_seconds=0,callback_seconds=0,commit_seconds=0;
++    std::string reason="engine_not_seen",pool_json="[]",fingerprint="",support_json="{}";
++    explicit arith_sampling_state(ast_manager&m):root(m),variables(m),terms(m){}
++    std::string log() const {
++        std::ostringstream o;o.precision(17);
++        o<<"{\"query_epoch\":"<<query_epoch<<",\"lp_state_epoch\":"<<state_epoch<<",\"coverage_version\":"<<coverage_version
++         <<",\"engine_seen\":"<<engine_seen<<",\"engine\":\"theory_lra\",\"opportunity_consumed\":"<<(consumed?"true":"false")
++         <<",\"columns_scanned\":"<<columns_scanned<<",\"columns_supported\":"<<columns_supported<<",\"lp_nonzeros_read\":"<<nonzeros
++         <<",\"pool_generated\":"<<pool_generated<<",\"pool_distinct\":"<<pool_distinct<<",\"pool_complete\":"<<(pool_complete?"true":"false")
++         <<",\"candidate_invalid\":"<<invalid<<",\"duplicate_candidates\":"<<duplicates<<",\"reason\":\""<<reason<<"\",\"selected_candidate\":"<<selected
++         <<",\"committed_move\":"<<(committed?"true":"false")<<",\"implementation_failure\":"<<(fatal?"true":"false")
++         <<",\"callback_remaining_seconds\":"<<callback_remaining_seconds<<",\"hook_seconds\":"<<hook_seconds<<",\"mapping_time\":"<<mapping_seconds<<",\"proposal_time\":"<<proposal_seconds
++         <<",\"callback_time\":"<<callback_seconds<<",\"commit_time\":"<<commit_seconds<<",\"soft_limit_seconds\":"<<allowance
++         <<",\"pool_fingerprint\":\""<<fingerprint<<"\",\"support_reasons\":"<<support_json<<",\"proposals\":"<<pool_json<<"}";
++        return o.str();
++    }
++};
++}
+--- /dev/null
++++ b/src/smt/arith_sampling_impl.h
+@@ -0,0 +1,221 @@
++// Included inside theory_lra::imp. All proposals and column handles are stack-local.
++// Exact integer subroutines are the SHA-bound private copy of project math.hpp.
++bool arith_sampling_hook() {
++    auto* ptr=ctx().arith_sampling();
++    if(!ptr || !ptr->active || !ptr->callback)return false;
++    auto&s=*ptr;++s.engine_seen;
++    if(s.consumed)return false;
++    s.consumed=true;++s.state_epoch;
++    using Z=lia::Z;using Q=lia::Q;using Time=std::chrono::steady_clock;
++    auto began=Time::now();
++    auto elapsed=[&]{return std::chrono::duration<double>(Time::now()-began).count();};
++    struct timer {arith_sampling_state&s;Time::time_point t;~timer(){s.hook_seconds+=std::chrono::duration<double>(Time::now()-t).count();}} guard{s,began};
++    struct phase_timer {double* value;Time::time_point start=Time::now();void finish(){if(value){*value+=std::chrono::duration<double>(Time::now()-start).count();value=nullptr;}}void next(double&v){finish();value=&v;start=Time::now();}~phase_timer(){finish();}} phase{&s.mapping_seconds};
++    std::map<std::string,unsigned> reasons;
++    auto finish_reasons=[&]{std::ostringstream o;o<<'{';bool sep=false;for(auto const&r:reasons){if(sep)o<<',';sep=true;o<<'"'<<r.first<<"\":"<<r.second;}s.support_json=o.str()+'}';};
++    auto tick=[&]{if(ctx().get_cancel_flag())throw std::string("cancelled");if(elapsed()>=s.allowance)throw std::string("budget");};
++    auto qvalue=[&](rational const&r)->Q {if(r.bitsize()>4096)throw std::string("integer_bits");Q q(r.to_string());q.canonicalize();return q;};
++    auto integer=[&](Q const&q)->Z {if(q.get_den()!=1)throw std::string("no_integer_step");Z z=q.get_num();if(mpz_sizeinbase(z.get_mpz_t(),2)>4096)throw std::string("integer_bits");return z;};
++    auto key=[](std::vector<Z>const& values){std::string r;for(auto const&v:values){r+=v.get_str();r+=';';}return r;};
++    auto hash=[](std::string const&str){uint64_t h=14695981039346656037ULL;for(unsigned char c:str){h^=c;h*=1099511628211ULL;}std::ostringstream o;o<<std::hex<<h;return o.str();};
++    struct movement {unsigned column=UINT_MAX;lp::impq before,after;Z step=0,k=0;std::map<unsigned,Q> delta;std::vector<Z> values;std::string source="noop";};
++    struct axis {unsigned column;lp::impq before;Z step;lia::Interval interval;std::map<unsigned,Q> direction;std::vector<std::pair<expr*,unsigned>> targets;};
++    try {
++        tick();
++        if(m_nla || !m_not_handled.empty()){s.reason="unsupported_operator";return false;}
++        if(!m_lia || lp().has_inf_int() || !lp().is_feasible()){s.reason="no_integer_step";return false;}
++        const uint64_t epoch=s.state_epoch;
++        const unsigned ncols=lp().column_count();
++        std::vector<unsigned> columns(s.variables.size(),UINT_MAX);
++        std::unordered_map<expr*,unsigned> original;
++        std::vector<Z> base;
++        auto existing_column=[&](expr*e)->unsigned {
++            if(!ctx().e_internalized(e))throw std::string("unmapped");
++            enode*n=ctx().get_enode(e);auto v=n->get_th_var(get_id());
++            if(!is_registered_var(v)){n=n->get_root();v=n->get_th_var(get_id());}
++            if(!is_registered_var(v))throw std::string("unmapped");
++            unsigned j=lp().external_to_local(v);
++            if(j>=ncols)throw std::string("unmapped");
++            return j;
++        };
++        auto column_value=[&](unsigned j,std::map<unsigned,Q>const&delta)->Q {
++            auto const&v=lp().get_column_value(j);
++            if(!v.y.is_zero())throw std::string("unresolved_infinitesimal");
++            Q q=qvalue(v.x);auto it=delta.find(j);if(it!=delta.end())q+=it->second;return q;
++        };
++        std::map<unsigned,Q> empty;
++        for(unsigned i=0;i<s.variables.size();++i){
++            if((i&31)==0)tick();expr*e=s.variables.get(i);original[e]=i;
++            if(m.is_bool(e)){auto b=ctx().get_assignment(e);if(b==l_undef)throw std::string("unmapped");base.push_back(Z(b==l_true));}
++            else if(a.is_int(e)){columns[i]=existing_column(e);base.push_back(integer(column_value(columns[i],empty)));}
++            else throw std::string("unsupported_operator");
++        }
++        // Existing assigned relevant atoms freeze the live Boolean/theory signature.
++        // This includes disequalities and the atoms of all dynamic blockers/assumptions.
++        std::vector<std::pair<expr*,bool>> atoms;
++        for(unsigned b=0;b<ctx().get_num_bool_vars();++b){
++            if((b&63)==0)tick();expr*e=ctx().bool_var2expr(b);auto truth=ctx().get_assignment(b);
++            if(truth!=l_undef && ctx().is_relevant(e))atoms.push_back({e,truth==l_true});
++        }
++        auto evaluate=[&](expr*root,movement const&move,std::unordered_map<expr*,Q>&cache)->Q {
++            unsigned operations=0,depth=0;
++            std::function<Q(expr*)> eval=[&](expr*e)->Q {
++                struct depth_guard {unsigned&d;explicit depth_guard(unsigned&v):d(v){++d;}~depth_guard(){--d;}} dg(depth);if(depth>1024)throw std::string("evaluation_depth");
++                if((++operations&63)==0)tick();auto found=cache.find(e);if(found!=cache.end())return found->second;
++                Q r;auto oi=original.find(e);rational number;
++                if(oi!=original.end())r=move.values[oi->second];
++                else if(a.is_numeral(e,number))r=qvalue(number);
++                else if(is_uninterp_const(e)){
++                    if(m.is_bool(e)){auto b=ctx().get_assignment(e);if(b==l_undef)throw std::string("unmapped");r=b==l_true?1:0;}
++                    else if(a.is_int(e))r=column_value(existing_column(e),move.delta);
++                    else throw std::string("unsupported_operator");
++                } else {
++                    if(!is_app(e))throw std::string("unsupported_operator");
++                    auto n=to_app(e);auto c=[&](unsigned i){return eval(n->get_arg(i));};
++                    if(n->get_family_id()==m.get_basic_family_id())switch(n->get_decl_kind()){
++                    case OP_TRUE:r=1;break;case OP_FALSE:r=0;break;
++                    case OP_NOT:r=c(0)==0?1:0;break;
++                    case OP_AND:r=1;for(expr*x:*n)if(eval(x)==0){r=0;break;}break;
++                    case OP_OR:r=0;for(expr*x:*n)if(eval(x)!=0){r=1;break;}break;
++                    case OP_ITE:r=c(0)!=0?c(1):c(2);break;
++                    case OP_IMPLIES:r=(c(0)==0 || c(1)!=0)?1:0;break;
++                    case OP_XOR:{bool v=false;for(expr*x:*n)v^=eval(x)!=0;r=v?1:0;break;}
++                    case OP_EQ:r=c(0)==c(1)?1:0;break;
++                    case OP_DISTINCT:{std::set<Q>seen;r=1;for(expr*x:*n)if(!seen.insert(eval(x)).second){r=0;break;}break;}
++                    default:throw std::string("unsupported_operator");
++                    } else if(n->get_family_id()==get_id())switch(n->get_decl_kind()){
++                    case OP_ADD:r=0;for(expr*x:*n)r+=eval(x);break;
++                    case OP_SUB:r=c(0);for(unsigned i=1;i<n->get_num_args();++i)r-=c(i);break;
++                    case OP_UMINUS:r=-c(0);break;
++                    case OP_MUL:r=1;for(expr*x:*n)r*=eval(x);break;
++                    case OP_LE:r=c(0)<=c(1)?1:0;break;case OP_LT:r=c(0)<c(1)?1:0;break;
++                    case OP_GE:r=c(0)>=c(1)?1:0;break;case OP_GT:r=c(0)>c(1)?1:0;break;
++                    default:throw std::string("unsupported_operator");
++                    } else throw std::string("unsupported_operator");
++                }
++                if(mpz_sizeinbase(r.get_num().get_mpz_t(),2)>4096 || mpz_sizeinbase(r.get_den().get_mpz_t(),2)>4096)throw std::string("integer_bits");
++                cache.emplace(e,r);return r;
++            };
++            return eval(root);
++        };
++        auto valid=[&](movement const&move){
++            std::unordered_map<expr*,Q> cache;
++            if(evaluate(s.root,move,cache)==0)return false;
++            for(auto const&atom:atoms)if((evaluate(atom.first,move,cache)!=0)!=atom.second)return false;
++            return true;
++        };
++        movement noop;noop.values=base;
++        if(!valid(noop)){s.reason="native_signature_invalid";return false;}
++        std::vector<movement> pool{noop};std::set<std::string> identities{key(base)};
++        phase.next(s.proposal_seconds);s.pool_generated=s.pool_distinct=1;
++        std::mt19937_64 rng(s.proposal_seed);
++        std::vector<unsigned> nb;for(unsigned j:lp().r_nbasis())nb.push_back(j);
++        // Partial Fisher-Yates only consumes the dedicated proposal stream.
++        std::vector<axis> axes;
++        for(unsigned slot=0;slot<8 && slot<nb.size();++slot){
++            tick();unsigned pick=slot+std::uniform_int_distribution<unsigned>(0,nb.size()-slot-1)(rng);std::swap(nb[slot],nb[pick]);unsigned j=nb[slot];++s.columns_scanned;
++            if(!lp().column_is_int(j) || lp().column_is_fixed(j) || lp().is_base(j)){++reasons["basic_or_fixed"];continue;}
++            unsigned count=lp().get_column(j).size(),row_work=0;
++            for(auto const&c:lp().A_r().column(j))row_work+=lp().get_row(c.var()).size();
++            // Two bounded passes: native freedom interval and direction extraction.
++            if(s.nonzeros+2*count+row_work>8192){++reasons["lp_nonzero_limit"];break;}
++            s.nonzeros+=2*count+row_work;
++            Z denominator_lcm=1;
++            for(auto const&c:lp().A_r().column(j)){auto cq=qvalue(c.coeff());if(lp().column_is_int(lp().get_base_column_in_row(c.var()))){denominator_lcm=lia::lcm(denominator_lcm,cq.get_den());if(mpz_sizeinbase(denominator_lcm.get_mpz_t(),2)>4096)throw std::string("integer_bits");}}
++            bool il,iu;lp::impq lower,upper;lp::mpq step;
++            if(!m_lia->sampling_freedom(j,il,lower,iu,upper,step)){++reasons["basic_or_fixed"];continue;}
++            if((!il&&!lower.y.is_zero()) || (!iu&&!upper.y.is_zero())){++reasons["unresolved_infinitesimal"];continue;}
++            axis ax;ax.column=j;ax.before=lp().get_column_value(j);ax.step=integer(qvalue(step));
++            if(ax.step<=0 || !ax.before.y.is_zero()){++reasons["no_integer_step"];continue;}
++            Z x=integer(qvalue(ax.before.x));
++            if(!il){Q q=(qvalue(lower.x)-Q(x))/Q(ax.step);ax.interval.lo=lia::ceil_div(q.get_num(),q.get_den());}
++            if(!iu){Q q=(qvalue(upper.x)-Q(x))/Q(ax.step);ax.interval.hi=lia::floor_div(q.get_num(),q.get_den());}
++            if(!ax.interval.contains(0))throw std::string("invariant_interval");
++            if(ax.interval.lo && ax.interval.hi && *ax.interval.lo==0 && *ax.interval.hi==0){++reasons["singleton_interval"];continue;}
++            ax.direction[j]=Q(ax.step);
++            for(auto c:lp().A_r().column(j)){
++                unsigned basic=lp().get_base_column_in_row(c.var());Q d=-qvalue(c.coeff())*Q(ax.step);
++                if(lp().column_is_int(basic))integer(d);
++                if(!lp().get_column_value(basic).y.is_zero())throw std::string("unresolved_infinitesimal");
++                ax.direction[basic]=d;
++            }
++            bool observable=false;for(unsigned c:columns)if(ax.direction.count(c) && ax.direction[c]!=0)observable=true;
++            if(!observable){++reasons["no_observable_effect"];continue;}
++            for(unsigned t=0;t<2 && !s.terms.empty();++t){unsigned which=std::uniform_int_distribution<unsigned>(0,s.terms.size()-1)(rng);ax.targets.push_back({s.terms.get(which),unsigned(rng()&63)});}
++            ++s.columns_supported;axes.push_back(std::move(ax));
++        }
++        auto shadow=[&](axis const&ax,Z const&k){
++            movement mv;mv.column=ax.column;mv.before=ax.before;mv.step=ax.step;mv.k=k;
++            mv.after=lp::impq(rational(Z(integer(qvalue(ax.before.x))+ax.step*k).get_str().c_str()));
++            for(auto const&v:ax.direction)mv.delta[v.first]=v.second*Q(k);
++            mv.values=base;
++            for(unsigned i=0;i<columns.size();++i)if(columns[i]!=UINT_MAX)mv.values[i]=integer(column_value(columns[i],mv.delta));
++            return mv;
++        };
++        auto admit=[&](axis const&ax,Z const&k,char const*source){
++            tick();if(k==0 || !ax.interval.contains(k))return;
++            movement mv=shadow(ax,k);mv.source=source;++s.pool_generated;
++            auto id=key(mv.values);if(identities.count(id)){++s.duplicates;return;}
++            if(!valid(mv)){++s.invalid;++reasons["candidate_invalid"];return;}
++            identities.insert(id);pool.push_back(std::move(mv));s.pool_distinct=pool.size();
++        };
++        auto ranges=[&](lia::Interval const&in,Z const&period){
++            // Remove zero BEFORE representative-period clipping; no missing target at k=0.
++            std::vector<std::pair<Z,Z>> rs;
++            Z lo=in.lo?*in.lo:Z(-period),hi=in.hi?*in.hi:period;
++            if(lo<=-1)rs.push_back({std::max(lo,Z(-period)),std::min(hi,Z(-1))});
++            if(hi>=1)rs.push_back({std::max(lo,Z(1)),std::min(hi,period)});
++            return rs;
++        };
++        // Fixed round-robin source/column order; structural targets include BOTH values.
++        // The initial cyclic source offset is coverage-blind and reproducible.
++        unsigned source_offset=unsigned(rng()%5);
++        for(unsigned turn=0;turn<axes.size()*5 && pool.size()<16;++turn){
++            tick();unsigned source=(source_offset+turn)%5;axis const&ax=axes[(turn/5+source)%axes.size()];
++            if(source==0){admit(ax,Z(1),"near");if(pool.size()<16)admit(ax,Z(-1),"near");}
++            else if(source==1){if(ax.interval.lo)admit(ax,*ax.interval.lo,"endpoint");if(pool.size()<16 && ax.interval.hi)admit(ax,*ax.interval.hi,"endpoint");}
++            else if(source==2){auto rs=ranges(ax.interval,Z(256));Z total=0;for(auto const&r:rs)total+=r.second-r.first+1;
++                if(total>0){Z rank=lia::random_below(total,rng);for(auto const&r:rs){Z n=r.second-r.first+1;if(rank<n){admit(ax,Z(r.first+rank),"random");break;}rank-=n;}}}
++            else if(source-3<ax.targets.size()){
++                auto target=ax.targets[source-3];auto one=shadow(ax,Z(1));std::unordered_map<expr*,Q> cb,co;
++                Z beta=integer(evaluate(target.first,noop,cb));Z alpha=integer(evaluate(target.first,one,co))-beta;
++                Z period=alpha==0?Z(1):Z(lia::pow2(target.second+1)/lia::gcd(alpha,lia::pow2(target.second+1)));
++                auto rs=ranges(ax.interval,period);
++                for(unsigned value=0;value<2 && pool.size()<16;++value){tick();Z hits=0;for(auto const&r:rs)hits+=lia::count_bit_hits(alpha,beta,target.second,value,r.first,r.second);
++                    if(hits==0)continue;Z rank=lia::random_below(hits,rng);
++                    for(auto const&r:rs){Z n=lia::count_bit_hits(alpha,beta,target.second,value,r.first,r.second);if(rank<n){auto k=lia::find_bit_hit(alpha,beta,target.second,value,r.first,r.second,rank);if(k)admit(ax,*k,value?"bit1":"bit0");break;}rank-=n;}}
++            }
++        }
++        tick();s.pool_complete=true;s.reason=axes.empty()?"no_supported_axis":"complete";
++        
++        std::vector<std::string> storage;std::vector<char const*> flat;std::ostringstream meta;meta<<'[';std::string all;
++        for(unsigned i=0;i<pool.size();++i){auto const&mv=pool[i];auto id=key(mv.values);all+=id+'\n';for(auto const&v:mv.values)storage.push_back(v.get_str());if(i)meta<<',';
++            meta<<"{\"candidate_id\":"<<i<<",\"column\":"<<mv.column<<",\"step\":\""<<mv.step<<"\",\"parameter_k\":\""<<mv.k<<"\",\"source\":\""<<mv.source<<"\",\"identity_fnv\":\""<<hash(id)<<"\",\"affected_columns\":"<<mv.delta.size()<<",\"affected_original_variables\":";
++            unsigned affected=0;for(unsigned j=0;j<base.size();++j)affected+=base[j]!=mv.values[j];meta<<affected<<",\"original_column_value\":\""<<mv.before.x<<"\",\"proposed_column_value\":\""<<mv.after.x<<"\",\"affected_column_ids\":[";
++            bool sep=false;for(auto const&entry:mv.delta){if(sep)meta<<',';sep=true;meta<<entry.first;}meta<<"],\"affected_original_variable_ids\":[";sep=false;
++            for(unsigned j=0;j<base.size();++j)if(base[j]!=mv.values[j]){if(sep)meta<<',';sep=true;meta<<j;}meta<<"],\"support_status\":\"legal_complete\",\"rejection_reason\":null}";}
++        s.pool_json=meta.str()+']';s.fingerprint=hash(all);finish_reasons();
++        for(auto const&v:storage)flat.push_back(v.c_str());tick();
++        phase.finish();s.callback_remaining_seconds=std::max(0.,s.allowance-elapsed());
++        auto start=Time::now();s.in_callback=true;unsigned chosen=0;
++        try{chosen=s.callback(pool.size(),base.size(),flat.data(),s.log().c_str());s.in_callback=false;}catch(...){s.in_callback=false;throw;}
++        s.callback_seconds=std::chrono::duration<double>(Time::now()-start).count();
++        tick();if(chosen>=pool.size()){s.reason="external_pool_rejected";return false;}
++        s.selected=chosen;if(!chosen)return false;
++        auto const&mv=pool[chosen];
++        if(s.state_epoch!=epoch || lp().column_count()!=ncols || lp().is_base(mv.column) || lp().get_column_value(mv.column)!=mv.before){s.reason="stale_proposal";return false;}
++        tick();start=Time::now();lp().set_value_for_nbasic_column(mv.column,mv.after);m_model_is_initialized=false;m_model_eqs.reset();m_tmp_var_set.reset();
++        s.committed=1;
++        bool invariant=true;
++        for(auto const&c:lp().A_r().column(mv.column))invariant &= lp().row_is_correct(c.var());
++        for(auto const&d:mv.delta)invariant &= lp().column_is_feasible(d.first) && (!lp().column_is_int(d.first)||lp().column_value_is_int(d.first));
++        if(!invariant){
++            s.fatal=true;s.reason="commit_invariant_failure";throw default_exception("arithmetic sampling commit invariant failure; no incomplete restoration permitted");
++        }
++        s.commit_seconds=std::chrono::duration<double>(Time::now()-start).count();s.reason="committed";return true;
++    }catch(std::string const&why){
++        s.reason=why;if(why=="invariant_interval"){s.fatal=true;throw default_exception("arithmetic sampling invalid zero interval");}
++        if(!s.pool_complete && (why=="budget" || why=="cancelled"))s.reason="pool_incomplete_"+why;
++        finish_reasons();return false;
++    }
++}
+--- /dev/null
++++ b/src/util/lia_sampling_math.h
+@@ -0,0 +1,128 @@
++#pragma once
++#include <gmpxx.h>
++#include <optional>
++#include <random>
++#include <stdexcept>
++#include <vector>
++
++namespace lia {
++using Z = mpz_class;
++using Q = mpq_class;
++inline Z floor_div(const Z &a, const Z &b) {
++    if (b == 0)
++        throw std::invalid_argument("division by zero");
++    Z r;
++    mpz_fdiv_q(r.get_mpz_t(), a.get_mpz_t(), b.get_mpz_t());
++    return r;
++}
++inline Z ceil_div(const Z &a, const Z &b) {
++    if (b == 0)
++        throw std::invalid_argument("division by zero");
++    Z r;
++    mpz_cdiv_q(r.get_mpz_t(), a.get_mpz_t(), b.get_mpz_t());
++    return r;
++}
++inline Z mod(const Z &a, const Z &b) { return a - b * floor_div(a, b); }
++inline Z gcd(const Z &a, const Z &b) {
++    Z r;
++    mpz_gcd(r.get_mpz_t(), a.get_mpz_t(), b.get_mpz_t());
++    return r;
++}
++inline Z lcm(const Z &a, const Z &b) {
++    Z r;
++    mpz_lcm(r.get_mpz_t(), a.get_mpz_t(), b.get_mpz_t());
++    return r;
++}
++inline Z pow2(unsigned b) { return Z(1) << b; }
++inline unsigned bit(const Z &v, unsigned j) { return mpz_tstbit(v.get_mpz_t(), j); }
++// Sum floor((a*i+b)/m), 0 <= i < n. Euclidean reduction, O(log m).
++inline Z floor_sum(Z n, Z m, Z a, Z b) {
++    if (n < 0 || m <= 0)
++        throw std::invalid_argument("floor_sum domain");
++    Z result = 0;
++    while (true) {
++        Z qa = floor_div(a, m), qb = floor_div(b, m);
++        result += qa * n * (n - 1) / 2 + qb * n;
++        a -= qa * m;
++        b -= qb * m;
++        Z y = a * n + b;
++        if (y < m)
++            break;
++        n = y / m;
++        b = y % m;
++        std::swap(m, a);
++    }
++    return result;
++}
++inline Z count_bit_hits(const Z &alpha, const Z &beta, unsigned j, bool desired, const Z &L, const Z &U) {
++    if (j > 63)
++        throw std::invalid_argument("bit outside 0..63");
++    if (U < L)
++        return 0;
++    Z n = U - L + 1, m = pow2(j + 1), b = beta + alpha * L;
++    Z ones = floor_sum(n, m, alpha, Z(b + pow2(j))) - floor_sum(n, m, alpha, b);
++    return desired ? ones : Z(n - ones);
++}
++inline std::optional<Z> find_bit_hit(const Z &a, const Z &b, unsigned j, bool desired, Z L, Z U, Z rank = 0) {
++    Z count = count_bit_hits(a, b, j, desired, L, U);
++    if (rank < 0 || rank >= count)
++        return {};
++    const Z start = L;
++    while (L < U) {
++        Z mid = floor_div(Z(L + U), 2);
++        if (count_bit_hits(a, b, j, desired, start, mid) > rank)
++            U = mid;
++        else
++            L = mid + 1;
++    }
++    return L;
++}
++inline Z random_below(const Z &bound, std::mt19937_64 &rng) {
++    if (bound <= 0)
++        throw std::invalid_argument("random bound");
++    size_t bits = mpz_sizeinbase(bound.get_mpz_t(), 2);
++    Z v;
++    do {
++        v = 0;
++        for (size_t i = 0; i < bits; i += 64) {
++            v <<= 64;
++            v += Z(static_cast<unsigned long>(rng()));
++        }
++        v &= pow2(bits) - 1;
++    } while (v >= bound);
++    return v;
++}
++struct Interval {
++    std::optional<Z> lo, hi;
++    bool empty = false;
++    void constrain(const Z &q, const Z &r) {
++        if (q == 0) {
++            if (r < 0)
++                empty = true;
++        } else if (q > 0) {
++            Z u = floor_div(r, q);
++            if (!hi || u < *hi)
++                hi = u;
++        } else {
++            Z l = ceil_div(r, q);
++            if (!lo || l > *lo)
++                lo = l;
++        }
++        if (lo && hi && *lo > *hi)
++            empty = true;
++    }
++    bool contains(const Z &v) const { return !empty && (!lo || v >= *lo) && (!hi || v <= *hi); }
++    std::pair<Z, Z> finite(const Z &a, unsigned j) const {
++        if (empty)
++            throw std::logic_error("empty interval");
++        if (lo && hi)
++            return {*lo, *hi};
++        Z period = a == 0 ? Z(1) : Z(pow2(j + 1) / gcd(a, pow2(j + 1)));
++        if (lo)
++            return {*lo, Z(*lo + period - 1)};
++        if (hi)
++            return {Z(*hi - period + 1), *hi};
++        return {Z(-period / 2), Z(-period / 2 + period - 1)};
++    }
++};
++} // namespace lia
+--- a/src/smt/smt_context.h
++++ b/src/smt/smt_context.h
+@@ -55,6 +55,7 @@
+ #include <unordered_set>
+ #include <chrono>
+ #include <functional>
++#include "smt/arith_sampling.h"
+ 
+ // there is a significant space overhead with allocating 1000+ contexts in
+ // the case that each context only references a few expressions.
+@@ -288,6 +289,7 @@
+         bool m_native_phase_active=false;
+         double m_native_phase_seconds=0;
+         void native_phase_decision(bool_var v, bool& is_pos);
++        std::unique_ptr<arith_sampling_state> m_arith_sampling;
+         vector<std::pair<expr_ref, expr_ref>> m_values;
+         void initialize_value(expr* var, expr* value);
+ 
+@@ -1848,6 +1850,16 @@
+         void native_phase_install(std::function<int(expr*,bool,unsigned,unsigned)> cb,unsigned epoch);
+         void native_phase_clear();
+         std::string native_phase_log();
++        arith_sampling_state* arith_sampling() {return m_arith_sampling.get();}
++        bool arith_in_callback() const {return m_arith_sampling && m_arith_sampling->in_callback;}
++        void arith_sampling_install(expr* root,unsigned n,expr*const* vars,unsigned nt,expr*const* terms,arith_choice_callback cb,uint64_t epoch,unsigned version,uint64_t seed,double seconds) {
++            m_arith_sampling=std::make_unique<arith_sampling_state>(m);auto&s=*m_arith_sampling;
++            s.root=root;s.variables.append(n,vars);s.terms.append(nt,terms);s.callback=std::move(cb);
++            s.query_epoch=epoch;s.coverage_version=version;s.proposal_seed=seed;s.allowance=seconds;
++        }
++        void arith_sampling_clear(){if(m_arith_sampling){m_arith_sampling->active=false;m_arith_sampling->callback=nullptr;}}
++        std::string arith_sampling_log(){return m_arith_sampling?m_arith_sampling->log():"{}";}
++
+ 
+         bool watches_fixed(enode* n) const;
+ 
+--- a/src/smt/smt_context.cpp
++++ b/src/smt/smt_context.cpp
+@@ -1970,6 +1970,7 @@
+    \brief Create an internal backtracking point
+ */
+ void context::push_scope() {
++    if(m_arith_sampling)++m_arith_sampling->state_epoch;
+     if (m.has_trace_stream() && !m_is_auxiliary)
+         m.trace_stream() << "[push] " << m_scope_lvl << "\n";
+ 
+@@ -2443,6 +2444,7 @@
+    \warning This method will not invoke reset_cache_generation.
+ */
+ unsigned context::pop_scope_core(unsigned num_scopes) {
++    if(m_arith_sampling)++m_arith_sampling->state_epoch;
+     unsigned units_to_reassert_lim;
+ 
+     try {
+--- a/src/solver/solver.h
++++ b/src/solver/solver.h
+@@ -59,6 +59,12 @@
+     virtual void native_phase_install(std::function<int(expr*,bool,unsigned,unsigned)>,unsigned) { throw default_exception("native phase requires simple SMT solver"); }
+     virtual void native_phase_clear() {}
+     virtual std::string native_phase_log() { return "{}"; }
++    using arith_choice_callback=std::function<unsigned(unsigned,unsigned,char const*const*,char const*)>;
++    virtual void arith_sampling_install(expr*,unsigned,expr*const*,unsigned,expr*const*,arith_choice_callback,uint64_t,unsigned,uint64_t,double) {throw default_exception("arithmetic sampling requires simple SMT solver");}
++    virtual void arith_sampling_clear() {}
++    virtual bool arith_in_callback() const {return false;}
++    virtual std::string arith_sampling_log() {return "{}";}
++
+     solver(ast_manager& m): check_sat_result(m) {}
+ 
+     /**
+--- a/src/smt/smt_solver.cpp
++++ b/src/smt/smt_solver.cpp
+@@ -259,6 +259,11 @@
+         void native_phase_install(std::function<int(expr*,bool,unsigned,unsigned)> cb,unsigned epoch) override {m_context.get_context().native_phase_install(std::move(cb),epoch);}
+         void native_phase_clear() override {m_context.get_context().native_phase_clear();}
+         std::string native_phase_log() override {return m_context.get_context().native_phase_log();}
++        void arith_sampling_install(expr*f,unsigned n,expr*const*v,unsigned nt,expr*const*t,arith_choice_callback cb,uint64_t e,unsigned version,uint64_t seed,double seconds) override {m_context.get_context().arith_sampling_install(f,n,v,nt,t,std::move(cb),e,version,seed,seconds);}
++        void arith_sampling_clear() override {m_context.get_context().arith_sampling_clear();}
++        bool arith_in_callback() const override {return const_cast<smt::kernel&>(m_context).get_context().arith_in_callback();}
++        std::string arith_sampling_log() override {return m_context.get_context().arith_sampling_log();}
++
+         void user_propagate_initialize_value(expr* var, expr* value) override {
+             m_context.user_propagate_initialize_value(var, value);
+         }
+--- a/src/api/z3_api.h
++++ b/src/api/z3_api.h
+@@ -7302,6 +7302,14 @@
+     void Z3_API Z3_solver_clear_native_phase_callback(Z3_context c,Z3_solver s);
+     Z3_string Z3_API Z3_solver_get_native_phase_log(Z3_context c,Z3_solver s);
+ 
++    /* Read-only borrowed complete integer/Boolean candidate pool, row-major decimal values.
++       Return a candidate index (0=no-op). UINT_MAX rejects the entire pool.
++       No reentrant check/model/assert/push/pop/reset, no AST construction in callback.
++       Variables/terms are retained strongly until clear/reset/destruction. */
++    typedef unsigned Z3_arith_sampling_callback(void*,unsigned,unsigned,char const*const*,char const*);
++    void Z3_API Z3_solver_set_arith_sampling(Z3_context,Z3_solver,Z3_ast,unsigned,Z3_ast const*,unsigned,Z3_ast const*,Z3_arith_sampling_callback*,void*,uint64_t,unsigned,uint64_t,double);
++    void Z3_API Z3_solver_clear_arith_sampling(Z3_context,Z3_solver);
++    Z3_string Z3_API Z3_solver_get_arith_sampling_log(Z3_context,Z3_solver);
+     void Z3_API Z3_solver_set_initial_value(Z3_context c, Z3_solver s, Z3_ast v, Z3_ast val);
+ 
+ 
+--- a/src/api/api_solver.cpp
++++ b/src/api/api_solver.cpp
+@@ -477,6 +477,7 @@
+         Z3_TRY;
+         LOG_Z3_solver_push(c, s);
+         RESET_ERROR_CODE();
++        if(to_solver(s)->m_solver && to_solver_ref(s)->arith_in_callback())throw default_exception("forbidden arithmetic callback reentry");
+         init_solver(c, s);
+         to_solver_ref(s)->push();
+         if (to_solver(s)->m_pp) to_solver(s)->m_pp->push();
+@@ -491,6 +492,7 @@
+         Z3_TRY;
+         LOG_Z3_solver_pop(c, s, n);
+         RESET_ERROR_CODE();
++        if(to_solver(s)->m_solver && to_solver_ref(s)->arith_in_callback())throw default_exception("forbidden arithmetic callback reentry");
+         init_solver(c, s);
+         if (n > to_solver_ref(s)->get_scope_level()) {
+             SET_ERROR_CODE(Z3_IOB, nullptr);
+@@ -507,6 +509,7 @@
+         Z3_TRY;
+         LOG_Z3_solver_reset(c, s);
+         RESET_ERROR_CODE();
++        if(to_solver(s)->m_solver && to_solver_ref(s)->arith_in_callback())throw default_exception("forbidden arithmetic callback reentry");
+         to_solver(s)->m_solver = nullptr;
+         to_solver(s)->m_cmd_context = nullptr;
+         if (to_solver(s)->m_pp) to_solver(s)->m_pp->reset();
+@@ -526,6 +529,7 @@
+         Z3_TRY;
+         LOG_Z3_solver_assert(c, s, a);
+         RESET_ERROR_CODE();
++        if(to_solver(s)->m_solver && to_solver_ref(s)->arith_in_callback())throw default_exception("forbidden arithmetic callback reentry");
+         init_solver(c, s);
+         CHECK_FORMULA(a,);
+         to_solver(s)->assert_expr(to_expr(a));
+@@ -536,6 +540,7 @@
+         Z3_TRY;
+         LOG_Z3_solver_assert_and_track(c, s, a, p);
+         RESET_ERROR_CODE();
++        if(to_solver(s)->m_solver && to_solver_ref(s)->arith_in_callback())throw default_exception("forbidden arithmetic callback reentry");
+         init_solver(c, s);
+         CHECK_FORMULA(a,);
+         CHECK_FORMULA(p,);
+@@ -682,6 +687,7 @@
+         Z3_TRY;
+         LOG_Z3_solver_check(c, s);
+         RESET_ERROR_CODE();
++        if(to_solver(s)->m_solver && to_solver_ref(s)->arith_in_callback())throw default_exception("forbidden arithmetic callback reentry");
+         init_solver(c, s);
+         return _solver_check(c, s, 0, nullptr);
+         Z3_CATCH_RETURN(Z3_L_UNDEF);
+@@ -691,6 +697,7 @@
+         Z3_TRY;
+         LOG_Z3_solver_check_assumptions(c, s, num_assumptions, assumptions);
+         RESET_ERROR_CODE();
++        if(to_solver(s)->m_solver && to_solver_ref(s)->arith_in_callback())throw default_exception("forbidden arithmetic callback reentry");
+         init_solver(c, s);
+         return _solver_check(c, s, num_assumptions, assumptions);
+         Z3_CATCH_RETURN(Z3_L_UNDEF);
+@@ -700,6 +707,7 @@
+         Z3_TRY;
+         LOG_Z3_solver_get_model(c, s);
+         RESET_ERROR_CODE();
++        if(to_solver(s)->m_solver && to_solver_ref(s)->arith_in_callback())throw default_exception("forbidden arithmetic callback reentry");
+         init_solver(c, s);
+         model_ref _m;
+         to_solver_ref(s)->get_model(_m);
+@@ -1209,6 +1217,18 @@
+     Z3_string Z3_API Z3_solver_get_native_phase_log(Z3_context c,Z3_solver s) {
+         Z3_TRY;RESET_ERROR_CODE();init_solver(c,s);return mk_c(c)->mk_external_string(to_solver_ref(s)->native_phase_log());Z3_CATCH_RETURN("");
+     }
++    void Z3_API Z3_solver_set_arith_sampling(Z3_context c,Z3_solver s,Z3_ast f,unsigned n,Z3_ast const* vars,unsigned nt,Z3_ast const* terms,Z3_arith_sampling_callback* cb,void* state,uint64_t epoch,unsigned version,uint64_t seed,double seconds) {
++        Z3_TRY;RESET_ERROR_CODE();init_solver(c,s);
++        if(to_solver_ref(s)->arith_in_callback())throw default_exception("reentrant arithmetic callback");
++        if(!cb){to_solver_ref(s)->arith_sampling_clear();return;}
++        to_solver_ref(s)->arith_sampling_install(to_expr(f),n,to_exprs(n,vars),nt,to_exprs(nt,terms),[cb,state](unsigned n,unsigned v,char const*const*x,char const*meta){return cb(state,n,v,x,meta);},epoch,version,seed,seconds);Z3_CATCH;
++    }
++    void Z3_API Z3_solver_clear_arith_sampling(Z3_context c,Z3_solver s) {
++        Z3_TRY;RESET_ERROR_CODE();init_solver(c,s);if(to_solver_ref(s)->arith_in_callback())throw default_exception("reentrant arithmetic callback");to_solver_ref(s)->arith_sampling_clear();Z3_CATCH;
++    }
++    Z3_string Z3_API Z3_solver_get_arith_sampling_log(Z3_context c,Z3_solver s) {
++        Z3_TRY;RESET_ERROR_CODE();init_solver(c,s);return mk_c(c)->mk_external_string(to_solver_ref(s)->arith_sampling_log());Z3_CATCH_RETURN("");
++    }
+     void Z3_API Z3_solver_set_initial_value(Z3_context c, Z3_solver s, Z3_ast var, Z3_ast value) {
+         Z3_TRY;
+         LOG_Z3_solver_set_initial_value(c, s, var, value);
+--- a/src/math/lp/int_solver.h
++++ b/src/math/lp/int_solver.h
+@@ -87,6 +87,8 @@
+     u_dependency* column_lower_bound_constraint(unsigned j) const;
+     bool current_solution_is_inf_on_cut() const;
+ 
++    // Read-only: caller bounds sparse work and validates integer-feasible precondition.
++    bool sampling_freedom(unsigned j,bool& il,impq& l,bool& iu,impq& u,mpq& step) {return get_freedom_interval_for_column(j,il,l,iu,u,step);}
+     bool shift_var(unsigned j, unsigned range);
+     std::ostream&  display_row_info(std::ostream & out, unsigned row_index) const;
+     std::ostream & display_row(std::ostream & out, std_vector<row_cell<rational>> const & row) const;
+--- a/src/smt/theory_lra.cpp
++++ b/src/smt/theory_lra.cpp
+@@ -46,6 +46,10 @@
+ #include "util/cancel_eh.h"
+ #include "util/scoped_timer.h"
+ #include "util/distribution.h"
++#include "util/lia_sampling_math.h"
++#include <unordered_map>
++#include <set>
++#include <iomanip>
+ 
+ typedef lp::lpvar lpvar;
+ 
+@@ -1599,6 +1603,8 @@
+         return FC_GIVEUP;
+     }
+     
++    #include "smt/arith_sampling_impl.h"
++
+     final_check_status final_check_eh() {
+         if (propagate_core())
+             return FC_CONTINUE;
+@@ -1664,6 +1670,7 @@
+                 if (st == FC_CONTINUE)
+                     break;
+             }
++            if(st==FC_DONE && !int_undef && arith_sampling_hook())return FC_CONTINUE;
+             return st;
+         case l_false:
+             get_infeasibility_explanation_and_set_conflict();

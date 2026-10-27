@@ -1,0 +1,34 @@
+{
+  "source_base": "f2c6e1756b13281d96cbf90a8bd940129e56cce4",
+  "subtree": "z3",
+  "mode": "release",
+  "cache_copy": "independent copy; exact flags and content-bound unchanged source timestamps",
+  "patches": {
+    "z3_soft_phase.patch": "f22b68419792d917d103efbe0d08c313a0bebf5f4d1ef69dc2bfebfff925c7f8",
+    "z3_native_feedback_phase.patch": "3a834233b77a9fb701b2ed485e923d10d1737f5263001c5b3280a340f38d4fc6",
+    "z3_arith_coverage.patch": "508cfc3cc07dc8fafff19c33bc68ffdbcc0f9749428aa1945203457f1de946a7"
+  },
+  "modified_sources": {
+    "src/smt/arith_sampling.h": "32661fe657a6dedede5fa3531ec9cd5226f58336f35373d5ab3c4dfef95c9e49",
+    "src/smt/arith_sampling_impl.h": "934573504a249f9ad50c05ca299d8904f258bda025252bb66462cbff30a3cec2",
+    "src/util/lia_sampling_math.h": "8e2ef3cc8f356bd7365b778acba3adffdff35947a31be73880e02ab3b5fdc8a4",
+    "src/smt/smt_context.h": "b2741d5c39976bee09ff470768c0c82e0dc4707970cc26da6955564143a97204",
+    "src/smt/smt_context.cpp": "94967114e0a229ce75aab2054b628f632847b1908e526e190bea4ee5bf135470",
+    "src/solver/solver.h": "df7f5a6ee7ef31dbdea8688e634ee7a5ee0fe8f044e08e91d0dc5b244f96ce3b",
+    "src/smt/smt_solver.cpp": "465a6d57c3bf7d91ad92bc9e244cbd86e822c625c4ef23ed239a38102375671b",
+    "src/api/z3_api.h": "b2d6d0035aa2c8428559d26048a9ab8eca193af7f2c6f4063ef4900fc4294907",
+    "src/api/api_solver.cpp": "b6f5b72182af95221d35ee732b203d0be4a25dab18c243fc4c14daf8412b8c86",
+    "src/math/lp/int_solver.h": "0c0bfad116e06a3bf0926100f05471775609f4ce9a94b33e1adfbe59fe6aef57",
+    "src/smt/theory_lra.cpp": "894f39c729e0cc6fb8cd4f387d1b2a6eb7c61a00393f455241e8b3e20263aaa1"
+  },
+  "library": "/mnt/Space0/SMT_Sampling/lia_cover_sampler/dependencies/z3-arith-coverage/install/lib/libz3.so",
+  "library_sha256": "d7d2dd605f8601bbf527fff2e5c18d6fdbe1c451afc0fa6375161f578d3abd06",
+  "config": "PREFIX=/mnt/Space0/SMT_Sampling/lia_cover_sampler/dependencies/z3-arith-coverage/install\nCC=gcc\nCXX=g++\nCXXFLAGS= -D_MP_INTERNAL -DNDEBUG -D_EXTERNAL_RELEASE  -std=c++20 -fvisibility=hidden -fvisibility-inlines-hidden -c -mfpmath=sse -msse -msse2 -O3 -fPIC\nCFLAGS= -D_MP_INTERNAL -DNDEBUG -D_EXTERNAL_RELEASE   -fvisibility=hidden -fvisibility-inlines-hidden -c -mfpmath=sse -msse -msse2 -O3 -fPIC\nEXAMP_DEBUG_FLAG=\nCXX_OUT_FLAG=-o \nC_OUT_FLAG=-o \nOBJ_EXT=.o\nLIB_EXT=.a\nAR=ar\nAR_FLAGS=rcs\nAR_OUTFLAG=\nEXE_EXT=\nLINK=g++\nLINK_FLAGS=\nLINK_OUT_FLAG=-o \nLINK_EXTRA_FLAGS=-lpthread -lgmpxx -lgmp\nSO_EXT=.so\nSLINK=g++\nSLINK_FLAGS=-shared\nSLINK_EXTRA_FLAGS=-lgmpxx -lgmp -lpthread  -Wl,-soname,libz3.so\nSLINK_OUT_FLAG=-o \nOS_DEFINES=\n",
+  "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+  "historical_libraries": {
+    "dependencies/z3-native-feedback-phase/install/lib/libz3.so": "eb11f29555356fcda30d546c251bc1f77cb900336cea2e2abbb40484de9c2559",
+    "dependencies/z3-native-feedback-phase/install-sanitize/lib/libz3.so": "ed4e2d04ef46e9d12cd83a87689c83ee16fd9b8dcd863f007c8d984cb89704ee"
+  },
+  "math_sha256": "8e2ef3cc8f356bd7365b778acba3adffdff35947a31be73880e02ab3b5fdc8a4",
+  "links": "\tlinux-vdso.so.1 (0x00007ffd4a5d6000)\n\tlibgmpxx.so.4 => /lib/x86_64-linux-gnu/libgmpxx.so.4 (0x000076f27abe9000)\n\tlibgmp.so.10 => /lib/x86_64-linux-gnu/libgmp.so.10 (0x000076f27ab67000)\n\tlibstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x000076f27a8c5000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x000076f27a7de000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x000076f27a7b0000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000076f27a585000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000076f27c92f000)\n"
+}

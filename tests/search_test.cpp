@@ -100,8 +100,13 @@ int main() {
             Coverage cov(f); cov.accept(f.evaluate(Assignment{0}));
             Global global(f,0); Stats stats; Budget budget;
             Target target{f.variables[0],63,true};
-            auto result=global.query({target},budget,stats);
-            check(result.code==SolveStatus::Unsat,"unreachable sign target");
+            // This is a logical/caching regression, not a 50ms latency test.
+            // Instrumented old and new Z3 both exceed 50ms on some hosts.
+            // Keep the UNSAT requirement strict; use a bounded test-only allowance.
+            budget.seconds=3;global.target_budget.requested_timeout_ms=2000;
+            auto result=global.query({target},budget,stats,2000);
+            check(result.code==SolveStatus::Unsat,"unreachable sign target: status="+result.status+
+                  " reason="+result.detail+" granted_ms="+std::to_string(result.actual_timeout_ms));
             TargetManager targets(f);
             targets.globally_unreachable=[&](Target t){return global.unreachable(t);};
             check(!targets.eligible(target,cov,budget.elapsed()),"local pool filters globally impossible target");

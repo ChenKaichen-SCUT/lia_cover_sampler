@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/test_native_feedback_build.py", line 32, in <module>
+    if __name__=='__main__':main()
+  File "/mnt/Space0/SMT_Sampling/lia_cover_sampler/scripts/test_native_feedback_build.py", line 16, in main
+    with (out/'ctest.txt').open('w') as f:subprocess.run(['ctest','--test-dir',str(b),'--output-on-failure'],stdout=f,stderr=subprocess.STDOUT,env=env,check=True)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['ctest', '--test-dir', '/mnt/Space0/SMT_Sampling/lia_cover_sampler/build/arith_coverage/sanitize', '--output-on-failure']' returned non-zero exit status 8.
