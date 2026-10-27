@@ -1,0 +1,60 @@
+{
+  "stages": [
+    "smoke",
+    "probe"
+  ],
+  "sessions": 18,
+  "probe_gate": {
+    "passed": false,
+    "rule": "two main hooks; >=2 formulas with >=10 verified complete pools and better-than-noop; >=1 main among them with covered>random expectation on >=2 states; no errors",
+    "formulas": [
+      {
+        "formula": "SMT_random_LIA_ex14600_2600_100.smt2",
+        "hook_queries": 96,
+        "verified_complete_pools": 0,
+        "nontrivial_pools": 0,
+        "strictly_better_noop": 0,
+        "covered_above_random": 0,
+        "arith_seconds": 0.3993622490000376,
+        "phase_seconds": 0.8955503249999455
+      },
+      {
+        "formula": "SMT_real_LIA_ex8500_2400_100.smt2",
+        "hook_queries": 96,
+        "verified_complete_pools": 0,
+        "nontrivial_pools": 0,
+        "strictly_better_noop": 0,
+        "covered_above_random": 0,
+        "arith_seconds": 0.409183534000059,
+        "phase_seconds": 1.1050804680000377
+      },
+      {
+        "formula": "20180326-Bromberger_v45_problem__003.smt2.slack.smt2",
+        "hook_queries": 96,
+        "verified_complete_pools": 93,
+        "nontrivial_pools": 14,
+        "strictly_better_noop": 11,
+        "covered_above_random": 11,
+        "arith_seconds": 0.8256904670000845,
+        "phase_seconds": 1.596925949000072
+      },
+      {
+        "formula": "convert_convert-jpg2gif-query-1459.smt2",
+        "hook_queries": 8,
+        "verified_complete_pools": 0,
+        "nontrivial_pools": 0,
+        "strictly_better_noop": 0,
+        "covered_above_random": 0,
+        "arith_seconds": 0.02950555000002727,
+        "phase_seconds": 0.04948322800001104
+      }
+    ],
+    "screen_authorized_by_gate": false,
+    "automatic_launch": false,
+    "interpretation": "only same saved pool; no end-to-end performance claim"
+  },
+  "screen_gate": null,
+  "highdiv_rerun": false,
+  "long_runs": false,
+  "decision": "stop"
+}
